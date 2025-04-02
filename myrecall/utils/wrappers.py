@@ -15,22 +15,40 @@ class SuccessCounter(gym.Wrapper):
         self.successes = []
         self.current_success = False
 
-    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
-        obs, reward, done, info = self.env.step(action)
+    def step(self, action: Any) -> Tuple:
+        # 处理新版gym (gymnasium)
+        result = self.env.step(action)
+        if len(result) == 5:
+            # 新版本的gymnasium返回5个值
+            obs, reward, terminated, truncated, info = result
+        else:
+            # 旧版本的gym返回4个值
+            obs, reward, done, info = result
+            terminated = done
+            truncated = False
+            
         if info.get("success", False):
             self.current_success = True
-        if done:
+        if terminated or truncated:
             self.successes.append(self.current_success)
-        return obs, reward, done, info
+        
+        return obs, reward, terminated, truncated, info
 
     def pop_successes(self) -> List[bool]:
         res = self.successes
         self.successes = []
         return res
 
-    def reset(self, **kwargs) -> np.ndarray:
+    def reset(self, **kwargs) -> tuple:
         self.current_success = False
-        return self.env.reset(**kwargs)
+        result = self.env.reset(**kwargs)
+        # 处理新旧版本的reset接口
+        if isinstance(result, tuple) and len(result) == 2:
+            # 新版本返回(obs, info)
+            return result
+        else:
+            # 旧版本直接返回obs
+            return result, {}
 
 
 class OneHotAdder(gym.Wrapper):
@@ -60,12 +78,29 @@ class OneHotAdder(gym.Wrapper):
             obs = obs[: -self.orig_one_hot_dim]
         return np.concatenate([obs, self.to_append])
 
-    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
-        obs, reward, done, info = self.env.step(action)
-        return self._append_one_hot(obs), reward, done, info
+    def step(self, action: Any) -> Tuple:
+        # 处理新版gym (gymnasium)
+        result = self.env.step(action)
+        if len(result) == 5:
+            # 新版本的gymnasium返回5个值
+            obs, reward, terminated, truncated, info = result
+        else:
+            # 旧版本的gym返回4个值
+            obs, reward, done, info = result
+            terminated = done
+            truncated = False
+            
+        return self._append_one_hot(obs), reward, terminated, truncated, info
 
-    def reset(self, **kwargs) -> np.ndarray:
-        return self._append_one_hot(self.env.reset(**kwargs))
+    def reset(self, **kwargs) -> tuple:
+        result = self.env.reset(**kwargs)
+        # 处理新旧版本的reset接口
+        if isinstance(result, tuple) and len(result) == 2:
+            # 新版本返回(obs, info)
+            return self._append_one_hot(result[0]), result[1]
+        else:
+            # 旧版本直接返回obs
+            return self._append_one_hot(result), {}
 
 
 class RandomizationWrapper(gym.Wrapper):
@@ -96,7 +131,7 @@ class RandomizationWrapper(gym.Wrapper):
             self.reset_space_low = env._random_reset_space.low + 0.45 * diff
             self.reset_space_high = env._random_reset_space.low + 0.55 * diff
 
-    def reset(self, **kwargs) -> np.ndarray:
+    def reset(self, **kwargs) -> tuple:
         if self.kind == "random_init_fixed20":
             self.env.set_task(self.subtasks[random.randint(0, 19)])
         elif self.kind == "random_init_small_box":
@@ -105,4 +140,11 @@ class RandomizationWrapper(gym.Wrapper):
             )
             self.env._last_rand_vec = rand_vec
 
-        return self.env.reset(**kwargs)
+        result = self.env.reset(**kwargs)
+        # 处理新旧版本的reset接口
+        if isinstance(result, tuple) and len(result) == 2:
+            # 新版本返回(obs, info)
+            return result
+        else:
+            # 旧版本直接返回obs
+            return result, {}

@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import time
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -7,18 +8,17 @@ import gym
 import numpy as np
 import tensorflow as tf
 
-from myrecall.sac import models
-from myrecall.sac.replay_buffers import ReplayBuffer, ReservoirReplayBuffer
-from myrecall.sac.utils.logx import EpochLogger
-from myrecall.utils.enums import BufferType
-from myrecall.utils.utils import reset_optimizer, reset_weights, set_seed
+from continualworld.sac import models
+from continualworld.sac.models import PopArtMlpCritic
+from continualworld.sac.replay_buffers import ReplayBuffer, ReservoirReplayBuffer
+from continualworld.sac.utils.logx import EpochLogger
+from continualworld.utils.enums import BufferType
+from continualworld.utils.utils import reset_optimizer, reset_weights, set_seed
 
 
 class SAC:
     def __init__(
         self,
-        tasks: str,
-        method: str,
         env: gym.Env,
         test_envs: List[gym.Env],
         logger: EpochLogger,
@@ -41,6 +41,7 @@ class SAC:
         num_test_eps_stochastic: int = 10,
         num_test_eps_deterministic: int = 1,
         max_episode_len: int = 200,
+        save_freq_epochs: int = 100,
         reset_buffer_on_task_change: bool = True,
         buffer_type: BufferType = BufferType.FIFO,
         reset_optimizer_on_task_change: bool = False,
@@ -90,6 +91,8 @@ class SAC:
           num_test_eps_deterministic: Number of episodes to test the deterministic policy in each
             evaluation.
           max_episode_len: Maximum length of trajectory / episode / rollout.
+          save_freq_epochs: How often, in epochs, to save the current policy and value function.
+            (Epoch is defined as time between two subsequent evaluations, lasting log_every steps)
           reset_buffer_on_task_change: If True, replay buffer will be cleared after every task
             change (in continual learning).
           buffer_type: Type of the replay buffer. Either 'fifo' for regular FIFO buffer
@@ -111,15 +114,12 @@ class SAC:
         if critic_kwargs is None:
             critic_kwargs = {}
 
-        self.tasks = tasks
-        self.method = method
         self.env = env
         self.num_tasks = env.num_envs
         self.test_envs = test_envs
         self.logger = logger
         self.critic_cl = critic_cl
         self.critic_kwargs = critic_kwargs
-        self.seed = seed
         self.steps = steps
         self.log_every = log_every
         self.replay_size = replay_size
@@ -133,12 +133,15 @@ class SAC:
         self.num_test_eps_stochastic = num_test_eps_stochastic
         self.num_test_eps_deterministic = num_test_eps_deterministic
         self.max_episode_len = max_episode_len
+        self.save_freq_epochs = save_freq_epochs
         self.reset_buffer_on_task_change = reset_buffer_on_task_change
         self.buffer_type = buffer_type
         self.reset_optimizer_on_task_change = reset_optimizer_on_task_change
         self.reset_critic_on_task_change = reset_critic_on_task_change
         self.clipnorm = clipnorm
         self.agent_policy_exploration = agent_policy_exploration
+
+        self.use_popart = critic_cl is PopArtMlpCritic
 
         self.obs_dim = env.observation_space.shape[0]
         self.act_dim = env.action_space.shape[0]
@@ -162,7 +165,6 @@ class SAC:
 
         # Create actor and critic networks
         self.actor = actor_cl(**actor_kwargs)
-        # print(self.actor.trainable_variables)
 
         self.critic1 = critic_cl(**critic_kwargs)
         self.target_critic1 = critic_cl(**critic_kwargs)
@@ -171,8 +173,6 @@ class SAC:
         self.critic2 = critic_cl(**critic_kwargs)
         self.target_critic2 = critic_cl(**critic_kwargs)
         self.target_critic2.set_weights(self.critic2.get_weights())
-
-        # print(self.critic1.trainable_variables)
 
         self.critic_variables = self.critic1.trainable_variables + self.critic2.trainable_variables
         self.all_common_variables = (
@@ -211,7 +211,7 @@ class SAC:
     ) -> Tuple[List[tf.Tensor], List[tf.Tensor], List[tf.Tensor]]:
         return actor_gradients, critic_gradients, alpha_gradient
 
-    def get_auxiliary_loss(self, seq_idx: tf.Tensor, aux_batch: Dict[str, tf.Tensor],) -> tf.Tensor:
+    def get_auxiliary_loss(self, seq_idx: tf.Tensor) -> tf.Tensor:
         return tf.constant(0.0)
 
     def on_test_start(self, seq_idx: tf.Tensor) -> None:
@@ -227,9 +227,6 @@ class SAC:
         pass
 
     def get_episodic_batch(self, current_task_idx: int) -> Optional[Dict[str, tf.Tensor]]:
-        return None
-
-    def get_auxiliary_batch(self, current_task_idx: int) -> Optional[Dict[str, tf.Tensor]]:
         return None
 
     def get_log_alpha(self, obs: tf.Tensor) -> tf.Tensor:
@@ -254,9 +251,8 @@ class SAC:
             seq_idx: tf.Tensor,
             batch: Dict[str, tf.Tensor],
             episodic_batch: Dict[str, tf.Tensor] = None,
-            aux_batch: Dict[str, tf.Tensor] = None,
         ) -> Dict:
-            gradients, metrics = self.get_gradients(seq_idx, aux_batch, **batch)
+            gradients, metrics = self.get_gradients(seq_idx, **batch)
             # Warning: we refer here to the int task_idx in the parent function, not
             # the passed seq_idx.
             gradients = self.adjust_gradients(
@@ -282,7 +278,6 @@ class SAC:
     def get_gradients(
         self,
         seq_idx: tf.Tensor,
-        aux_batch: Dict[str, tf.Tensor],
         obs: tf.Tensor,
         next_obs: tf.Tensor,
         actions: tf.Tensor,
@@ -316,15 +311,15 @@ class SAC:
             min_target_q = tf.minimum(target_q1, target_q2)
 
             # Entropy-regularized Bellman backup for Q functions, using Clipped Double-Q targets
-            if self.critic_cl is models.PopArtMlpCritic:
+            if self.critic_cl is PopArtMlpCritic:
                 q_backup = tf.stop_gradient(
                     self.critic1.normalize(
                         rewards
                         + self.gamma
                         * (1 - done)
                         * (
-                                self.critic1.unnormalize(min_target_q, next_obs)
-                                - tf.math.exp(log_alpha) * logp_pi_next
+                            self.critic1.unnormalize(min_target_q, next_obs)
+                            - tf.math.exp(log_alpha) * logp_pi_next
                         ),
                         obs,
                     )
@@ -343,7 +338,12 @@ class SAC:
             q2_loss = 0.5 * tf.reduce_mean((q_backup - q2) ** 2)
             value_loss = q1_loss + q2_loss
 
-            auxiliary_loss = self.get_auxiliary_loss(seq_idx, aux_batch)
+            if self.auto_alpha:
+                alpha_loss = -tf.reduce_mean(
+                    log_alpha * tf.stop_gradient(logp_pi + self.target_entropy)
+                )
+
+            auxiliary_loss = self.get_auxiliary_loss(seq_idx)
             metrics = dict(
                 pi_loss=pi_loss,
                 q1_loss=q1_loss,
@@ -352,15 +352,11 @@ class SAC:
                 q2=q2,
                 logp_pi=logp_pi,
                 reg_loss=auxiliary_loss,
+                agem_violation=0,
             )
 
             pi_loss += auxiliary_loss
             value_loss += auxiliary_loss
-
-            if self.auto_alpha:
-                alpha_loss = -tf.reduce_mean(
-                    log_alpha * tf.stop_gradient(logp_pi + self.target_entropy)
-                )
 
         # Compute gradients
         actor_gradients = g.gradient(pi_loss, self.actor.trainable_variables)
@@ -371,7 +367,9 @@ class SAC:
             alpha_gradient = None
         del g
 
-        if self.critic_cl is models.PopArtMlpCritic:
+        if self.use_popart:
+            # Stats are shared between critic1 and critic2.
+            # We keep them only in critic1.
             self.critic1.update_stats(q_backup, obs)
 
         gradients = (actor_gradients, critic_gradients, alpha_gradient)
@@ -409,29 +407,30 @@ class SAC:
             self.on_test_start(seq_idx)
 
             for j in range(num_episodes):
-                # 处理环境初始化
                 try:
                     # 尝试新版API
                     result = test_env.reset()
-                    if isinstance(result, tuple) and len(result) == 2:
-                        obs, _ = result  # 在新版API中返回(observation, info)
+                    if isinstance(result, tuple):
+                        obs = result[0]  # 在新版API中返回(observation, info)
                     else:
                         obs = result
                 except:
                     # 兼容旧版API
                     obs = test_env.reset()
-                
+                    
                 done, episode_return, episode_len = False, 0, 0
                 while not (done or (episode_len == self.max_episode_len)):
-                    action = self.get_action_test(tf.convert_to_tensor(obs), tf.constant(deterministic))
                     try:
                         # 尝试新版API (5个返回值)
-                        obs, reward, terminated, truncated, info = test_env.step(action)
+                        obs, reward, terminated, truncated, info = test_env.step(
+                            self.get_action_test(tf.convert_to_tensor(obs), tf.constant(deterministic))
+                        )
                         done = terminated or truncated
                     except ValueError:
                         # 兼容旧版API (4个返回值)
-                        obs, reward, done, info = test_env.step(action)
-                    
+                        obs, reward, done, _ = test_env.step(
+                            self.get_action_test(tf.convert_to_tensor(obs), tf.constant(deterministic))
+                        )
                     episode_return += reward
                     episode_len += 1
                 self.logger.store(
@@ -440,7 +439,7 @@ class SAC:
 
             self.on_test_end(seq_idx)
 
-            self.logger.log_tabular(key_prefix + "return", average_only=True)
+            self.logger.log_tabular(key_prefix + "return", with_min_and_max=True)
             self.logger.log_tabular(key_prefix + "ep_length", average_only=True)
             env_success = test_env.pop_successes()
             avg_success += env_success
@@ -451,13 +450,14 @@ class SAC:
     def _log_after_update(self, results):
         self.logger.store(
             {
-                "train/q1": results["q1"],
-                "train/q2": results["q2"],
-                "train/logp_pi": results["logp_pi"],
+                "train/q1_vals": results["q1"],
+                "train/q2_vals": results["q2"],
+                "train/log_pi": results["logp_pi"],
                 "train/loss_pi": results["pi_loss"],
                 "train/loss_q1": results["q1_loss"],
                 "train/loss_q2": results["q2_loss"],
                 "train/loss_reg": results["reg_loss"],
+                "train/agem_violation": results["agem_violation"],
             }
         )
 
@@ -466,24 +466,35 @@ class SAC:
                 self.logger.store(
                     {f"train/alpha/{task_idx}": float(tf.math.exp(self.all_log_alpha[task_idx][0]))}
                 )
+            if self.use_popart:
+                self.logger.store(
+                    {
+                        f"train/popart_mean/{task_idx}": self.critic1.moment1[task_idx][0],
+                        f"train/popart_std/{task_idx}": self.critic1.sigma[task_idx][0],
+                    }
+                )
 
     def _log_after_epoch(self, epoch, current_task_timestep, global_timestep, info):
         # Log info about epoch
         self.logger.log_tabular("epoch", epoch)
-        self.logger.log_tabular("train/return", average_only=True)
+        self.logger.log_tabular("train/return", with_min_and_max=True)
         self.logger.log_tabular("train/ep_length", average_only=True)
         self.logger.log_tabular("total_env_steps", global_timestep + 1)
         self.logger.log_tabular("current_task_steps", current_task_timestep + 1)
-        self.logger.log_tabular("train/q1", average_only=True)
-        self.logger.log_tabular("train/q2", average_only=True)
-        self.logger.log_tabular("train/logp_pi", average_only=True)
+        self.logger.log_tabular("train/q1_vals", with_min_and_max=True)
+        self.logger.log_tabular("train/q2_vals", with_min_and_max=True)
+        self.logger.log_tabular("train/log_pi", with_min_and_max=True)
         self.logger.log_tabular("train/loss_pi", average_only=True)
         self.logger.log_tabular("train/loss_q1", average_only=True)
         self.logger.log_tabular("train/loss_q2", average_only=True)
         for task_idx in range(self.num_tasks):
             if self.auto_alpha:
                 self.logger.log_tabular(f"train/alpha/{task_idx}", average_only=True)
+            if self.use_popart:
+                self.logger.log_tabular(f"train/popart_mean/{task_idx}", average_only=True)
+                self.logger.log_tabular(f"train/popart_std/{task_idx}", average_only=True)
         self.logger.log_tabular("train/loss_reg", average_only=True)
+        self.logger.log_tabular("train/agem_violation", average_only=True)
 
         avg_success = np.mean(self.env.pop_successes())
         self.logger.log_tabular("train/success", avg_success)
@@ -493,20 +504,21 @@ class SAC:
         self.logger.log_tabular("walltime", time.time() - self.start_time)
         self.logger.dump_tabular()
 
-    def save_model(self):
-        prefix = f"./checkpoints/{self.tasks}_{self.method}_{self.seed}"
+    def save_model(self, current_task_idx):
+        dir_prefixes = []
+        if current_task_idx == -1:
+            dir_prefixes.append("./checkpoints")
+        else:
+            dir_prefixes.append(f"./checkpoints/task{current_task_idx}")
+            if current_task_idx == self.num_tasks - 1:
+                dir_prefixes.append("./checkpoints")
 
-        self.actor.save_weights(os.path.join(prefix, "actor"))
-        self.critic1.save_weights(os.path.join(prefix, "critic1"))
-        self.target_critic1.save_weights(os.path.join(prefix, "target_critic1"))
-        self.critic2.save_weights(os.path.join(prefix, "critic2"))
-        self.target_critic2.save_weights(os.path.join(prefix, "target_critic2"))
-
-        np.save(os.path.join(prefix, "obs_buf"), self.replay_buffer.obs_buf)
-        np.save(os.path.join(prefix, "next_obs_buf"), self.replay_buffer.next_obs_buf)
-        np.save(os.path.join(prefix, "actions_buf"), self.replay_buffer.actions_buf)
-        np.save(os.path.join(prefix, "rewards_buf"), self.replay_buffer.rewards_buf)
-        np.save(os.path.join(prefix, "done_buf"), self.replay_buffer.done_buf)
+        for prefix in dir_prefixes:
+            self.actor.save_weights(os.path.join(prefix, "actor"))
+            self.critic1.save_weights(os.path.join(prefix, "critic1"))
+            self.target_critic1.save_weights(os.path.join(prefix, "target_critic1"))
+            self.critic2.save_weights(os.path.join(prefix, "critic2"))
+            self.target_critic2.save_weights(os.path.join(prefix, "target_critic2"))
 
     def _handle_task_change(self, current_task_idx: int):
         self.on_task_start(current_task_idx)
@@ -525,11 +537,15 @@ class SAC:
         if self.reset_optimizer_on_task_change:
             reset_optimizer(self.optimizer)
 
+        # Update variables list and update function in case model changed.
+        # E.g: For VCL after the first task we set trainable=False for layer
+        # normalization. We need to recompute the graph in order for TensorFlow
+        # to notice this change.
         self.learn_on_batch = self.get_learn_on_batch(current_task_idx)
         self.all_common_variables = (
-                self.actor.common_variables
-                + self.critic1.common_variables
-                + self.critic2.common_variables
+            self.actor.common_variables
+            + self.critic1.common_variables
+            + self.critic2.common_variables
         )
 
     def run(self):
@@ -540,8 +556,8 @@ class SAC:
         try:
             # 尝试新版API
             result = self.env.reset()
-            if isinstance(result, tuple) and len(result) == 2:
-                obs, _ = result  # 在新版API中返回(observation, info)
+            if isinstance(result, tuple):
+                obs = result[0]  # 在新版API中返回(observation, info)
             else:
                 obs = result
         except:
@@ -606,8 +622,8 @@ class SAC:
                     try:
                         # 尝试新版API
                         result = self.env.reset()
-                        if isinstance(result, tuple) and len(result) == 2:
-                            obs, _ = result  # 在新版API中返回(observation, info)
+                        if isinstance(result, tuple):
+                            obs = result[0]  # 在新版API中返回(observation, info)
                         else:
                             obs = result
                     except:
@@ -622,10 +638,11 @@ class SAC:
 
                 for j in range(self.update_every):
                     batch = self.replay_buffer.sample_batch(self.batch_size)
+
                     episodic_batch = self.get_episodic_batch(current_task_idx)
-                    aux_batch = self.get_auxiliary_batch(current_task_idx)
+
                     results = self.learn_on_batch(
-                        tf.convert_to_tensor(current_task_idx), batch, episodic_batch, aux_batch
+                        tf.convert_to_tensor(current_task_idx), batch, episodic_batch
                     )
                     self._log_after_update(results)
 
@@ -640,12 +657,12 @@ class SAC:
                 epoch = (global_timestep + 1 + self.log_every - 1) // self.log_every
 
                 # Save model
-                # if (current_task_timestep + 1 == self.env.steps_per_env) or (global_timestep + 1 == self.steps):
-                #     self.save_model()
+                if (epoch % self.save_freq_epochs == 0) or (global_timestep + 1 == self.steps):
+                    self.save_model(current_task_idx)
 
                 # Test the performance of stochastic and detemi version of the agent.
                 self.test_agent(deterministic=False, num_episodes=self.num_test_eps_stochastic)
-                # self.test_agent(deterministic=True, num_episodes=self.num_test_eps_deterministic)
+                self.test_agent(deterministic=True, num_episodes=self.num_test_eps_deterministic)
 
                 self._log_after_epoch(epoch, current_task_timestep, global_timestep, info)
 

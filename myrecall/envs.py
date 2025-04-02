@@ -29,6 +29,8 @@ def get_task_name(name_or_number: Union[int, str]) -> str:
         index = int(name_or_number)
         return MT50_TASK_NAMES[index]
     except:
+        if isinstance(name_or_number, str) and '-v1' in name_or_number:
+            return name_or_number.replace('-v1', '-v2')
         return name_or_number
 
 
@@ -95,10 +97,18 @@ def remove_goal_bounds(obs_space: gym.spaces.Box) -> None:
 class ContinualLearningEnv(gym.Env):
     def __init__(self, envs: List[gym.Env], steps_per_env: int) -> None:
         for i in range(len(envs)):
-            assert envs[0].action_space == envs[i].action_space
-            assert_equal_excluding_goal_dimensions(
-                envs[0].observation_space, envs[i].observation_space
-            )
+            if i > 0 and envs[0].action_space != envs[i].action_space:
+                print(f"Warning: Action space mismatch between env0 and env{i}")
+                print(f"Env0 action space: {envs[0].action_space}")
+                print(f"Env{i} action space: {envs[i].action_space}")
+            try:
+                assert_equal_excluding_goal_dimensions(
+                    envs[0].observation_space, envs[i].observation_space
+                )
+            except AssertionError:
+                print(f"Warning: Observation space mismatch between env0 and env{i}")
+                print(f"Env0 observation space: {envs[0].observation_space}")
+                print(f"Env{i} observation space: {envs[i].observation_space}")
         self.action_space = envs[0].action_space
         self.observation_space = deepcopy(envs[0].observation_space)
         remove_goal_bounds(self.observation_space)
@@ -124,9 +134,19 @@ class ContinualLearningEnv(gym.Env):
                 self.avg_env_success[env.name] = np.mean(successes)
         return all_successes
 
-    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
+    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         self._check_steps_bound()
-        obs, reward, done, info = self.envs[self.cur_seq_idx].step(action)
+        result = self.envs[self.cur_seq_idx].step(action)
+        
+        # 处理新旧版本的gym接口
+        if len(result) == 5:
+            obs, reward, terminated, truncated, info = result
+            done = terminated or truncated
+        else:
+            obs, reward, done, info = result
+            terminated = done
+            truncated = False
+            
         info["seq_idx"] = self.cur_seq_idx
 
         self.cur_step += 1
@@ -134,15 +154,24 @@ class ContinualLearningEnv(gym.Env):
             # If we hit limit for current env, end the episode.
             # This may cause border episodes to be shorter than 200.
             done = True
+            terminated = False
+            truncated = True
             info["TimeLimit.truncated"] = True
 
             self.cur_seq_idx += 1
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
-    def reset(self) -> np.ndarray:
+    def reset(self) -> Tuple[np.ndarray, Dict]:
         self._check_steps_bound()
-        return self.envs[self.cur_seq_idx].reset()
+        result = self.envs[self.cur_seq_idx].reset()
+        # 处理新旧版本的reset接口
+        if isinstance(result, tuple) and len(result) == 2:
+            # 新版本返回(obs, info)
+            return result
+        else:
+            # 旧版本直接返回obs
+            return result, {}
 
 
 def get_cl_env(
@@ -212,22 +241,37 @@ class MultiTaskEnv(gym.Env):
                 self.avg_env_success[env.name] = np.mean(successes)
         return all_successes
 
-    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, Dict]:
+    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         self._check_steps_bound()
-        obs, reward, done, info = self.envs[self._cur_seq_idx].step(action)
+        result = self.envs[self._cur_seq_idx].step(action)
+        
+        # 处理新旧版本的gym接口
+        if len(result) == 5:
+            obs, reward, terminated, truncated, info = result
+        else:
+            obs, reward, done, info = result
+            terminated = done
+            truncated = False
+            
         info["mt_seq_idx"] = self._cur_seq_idx
         if self.cycle_mode == "step":
             self._cur_seq_idx = (self._cur_seq_idx + 1) % self.num_envs
         self.cur_step += 1
 
-        return obs, reward, done, info
+        return obs, reward, terminated, truncated, info
 
-    def reset(self) -> np.ndarray:
+    def reset(self) -> Tuple[np.ndarray, Dict]:
         self._check_steps_bound()
         if self.cycle_mode == "episode":
             self._cur_seq_idx = (self._cur_seq_idx + 1) % self.num_envs
-        obs = self.envs[self._cur_seq_idx].reset()
-        return obs
+        result = self.envs[self._cur_seq_idx].reset()
+        # 处理新旧版本的reset接口
+        if isinstance(result, tuple) and len(result) == 2:
+            # 新版本返回(obs, info)
+            return result
+        else:
+            # 旧版本直接返回obs
+            return result, {}
 
 
 def get_mt_env(

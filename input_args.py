@@ -1,6 +1,6 @@
 import argparse
 
-from continualworld.tasks import TASK_SEQS
+from myrecall.tasks import TASK_SEQS
 from continualworld.utils.enums import BufferType
 from continualworld.utils.utils import float_or_str, sci2int, str2bool
 
@@ -12,7 +12,7 @@ def cl_parse_args(args=None):
         "--tasks",
         type=str,
         choices=TASK_SEQS.keys(),
-        default='CW20',
+        default='CW10',
         help="Name of the sequence you want to run",
     )
     parser.add_argument(
