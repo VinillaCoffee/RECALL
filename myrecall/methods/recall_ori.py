@@ -201,38 +201,18 @@ class RECALL_SAC(SAC):
     def get_best_return_head(self, num_episodes, current_task_idx, num_heads) -> int:
         ave_returns = []
         test_env = self.test_envs[current_task_idx]
-        
+        one_hot_encoder = np.zeros(num_heads)
         for head_idx in range(current_task_idx):
-            # 创建一个与观察空间匹配的one_hot向量
+            one_hot = one_hot_encoder
+            one_hot[head_idx] = 1.0
             episode_returns = []
             for j in range(num_episodes):
-                # 处理新版API返回格式
-                reset_result = test_env.reset()
-                if isinstance(reset_result, tuple):
-                    obs = reset_result[0]  # 新版本API返回(obs, info)
-                else:
-                    obs = reset_result     # 旧版本API直接返回obs
-                
-                done, episode_return, episode_len = False, 0, 0
-                
+                obs, done, episode_return, episode_len = test_env.reset(), False, 0, 0
                 while not (done or (episode_len == self.max_episode_len)):
-                    # 创建一个新的observation数组，并正确设置one-hot部分
-                    # 使用MW_OBS_LEN作为分界点，MW_OBS_LEN后面的部分是one-hot编码
-                    one_hot = np.zeros(len(obs) - MW_OBS_LEN)
-                    if head_idx < len(one_hot):
-                        one_hot[head_idx] = 1.0
-                    
-                    obs_with_one_hot = np.concatenate([obs[:MW_OBS_LEN], one_hot])
-                    
-                    # 使用step方法并处理返回值
-                    step_result = test_env.step(self.get_action_test(tf.convert_to_tensor(obs_with_one_hot)))
-                    
-                    if len(step_result) == 5:  # 新版本API
-                        obs, reward, terminated, truncated, _ = step_result
-                        done = terminated or truncated
-                    else:  # 旧版本API
-                        obs, reward, done, _ = step_result
-                        
+                    obs[MW_OBS_LEN:] = one_hot
+                    obs, reward, done, _ = test_env.step(
+                        self.get_action_test(tf.convert_to_tensor(obs))
+                    )
                     episode_return += reward
                     episode_len += 1
                 episode_returns.append(episode_return)

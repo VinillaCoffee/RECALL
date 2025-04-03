@@ -25,12 +25,12 @@ def cl_parse_args(args=None):
     )
     parser.add_argument("--seed", type=int, help="Seed for randomness")
     parser.add_argument(
-        "--steps_per_task", type=sci2int, default=int(1e6), help="Numer of steps per task"
+        "--steps_per_task", type=sci2int, default=int(5e5), help="Numer of steps per task"
     )
     parser.add_argument(
         "--log_every",
         type=sci2int,
-        default=int(2e4),
+        default=int(1e4),
         help="Number of steps between subsequent evaluations and logging",
     )
     parser.add_argument(

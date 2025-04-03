@@ -107,8 +107,8 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         self.active_discrete_goal = None
 
         self.action_space = Box(
-            np.array([-1, -1, -1, -1]),
-            np.array([+1, +1, +1, +1]),
+            np.array([-1, -1, -1, -1], dtype=np.float32),
+            np.array([+1, +1, +1, +1], dtype=np.float32),
         )
 
         self._pos_obj_max_len = 6
