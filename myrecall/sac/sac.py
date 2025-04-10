@@ -34,7 +34,7 @@ class SAC:
         polyak: float = 0.995,
         lr: float = 1e-3,
         alpha: Union[float, str] = "auto",
-        batch_size: int = 128,
+        batch_size: int = 128, #edited 128
         start_steps: int = 10_000,
         update_after: int = 1000,
         update_every: int = 50,
