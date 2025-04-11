@@ -141,11 +141,15 @@ def main(
             retrain_steps=packnet_retrain_steps
         )
     elif cl_method == "vcl":
+        vcl_kwargs = vanilla_sac_kwargs.copy()
+        if "tasks" in vcl_kwargs:
+            del vcl_kwargs["tasks"]
+        
         sac = sac_class(
-            **vanilla_sac_kwargs,
+            **vcl_kwargs,
             cl_reg_coef=cl_reg_coef,
             regularize_critic=regularize_critic,
-            first_task_kl=vcl_first_task_kl
+            first_task_kl=first_task_kl
         )
     else:
         raise NotImplementedError("This method is not implemented")
