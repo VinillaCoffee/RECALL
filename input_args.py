@@ -123,7 +123,7 @@ def cl_parse_args(args=None):
     parser.add_argument(
         "--cl_method",
         type=str,
-        choices=["ft", "ewc", "clonex", "packnet", "pm", "recall"],
+        choices=["ft", "ewc", "clonex", "packnet", "pm", "recall","vcl","l2","mas","agem"],
         default=None,
         help="If None, finetuning method will be used. If one of 'l2', 'ewc', 'mas', 'vcl',"
         "'packnet', 'agem', respective method will be used.",
@@ -152,6 +152,13 @@ def cl_parse_args(args=None):
         default=0.0,
         help="Regularization strength for continual learning methods. "
         "Valid for 'ewc' continual learning methods.",
+    )
+    parser.add_argument(
+        "--vcl_first_task_kl",
+        type=str2bool,
+        default=False,
+        help="If True, use KL regularization also for the first task in 'vcl' continual learning"
+        "method.",
     )
     parser.add_argument(
         "--policy_reg_coef",

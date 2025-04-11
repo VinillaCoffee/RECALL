@@ -41,6 +41,7 @@ def main(
     packnet_retrain_steps: int,
     regularize_critic: bool,
     cl_reg_coef: float,
+    vcl_first_task_kl: bool,
     policy_reg_coef:float,
     value_reg_coef:float,
     behavior_cloning: bool,
@@ -48,7 +49,7 @@ def main(
     multihead_archs: bool,
     hide_task_id: bool,
     clipnorm: float,
-    agent_policy_exploration: bool,
+    agent_policy_exploration: bool
 ):
     tasks_list = TASK_SEQS[tasks]
     print(tasks_list)
@@ -113,7 +114,7 @@ def main(
 
     if cl_method in ["ft", "pm"]:
         sac = sac_class(**vanilla_sac_kwargs)
-    elif cl_method in ["ewc"]:
+    elif cl_method in ["l2", "ewc", "mas"]:
         sac = sac_class(
             **vanilla_sac_kwargs, cl_reg_coef=cl_reg_coef, regularize_critic=regularize_critic
         )
@@ -138,6 +139,13 @@ def main(
             **vanilla_sac_kwargs,
             regularize_critic=regularize_critic,
             retrain_steps=packnet_retrain_steps
+        )
+    elif cl_method == "vcl":
+        sac = sac_class(
+            **vanilla_sac_kwargs,
+            cl_reg_coef=cl_reg_coef,
+            regularize_critic=regularize_critic,
+            first_task_kl=vcl_first_task_kl
         )
     else:
         raise NotImplementedError("This method is not implemented")
