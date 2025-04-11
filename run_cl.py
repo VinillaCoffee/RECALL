@@ -41,6 +41,7 @@ def main(
     packnet_retrain_steps: int,
     regularize_critic: bool,
     cl_reg_coef: float,
+    first_task_kl: bool,
     vcl_first_task_kl: bool,
     policy_reg_coef:float,
     value_reg_coef:float,
