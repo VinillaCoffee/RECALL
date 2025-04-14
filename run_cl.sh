@@ -56,5 +56,5 @@ python run_cl.py --seed 0 --steps_per_task 5e5 --log_every 1e4 --tasks CW10 --cl
 python run_cl.py --seed 0 --steps_per_task 5e5 --log_every 1e4 --tasks CW10 --cl_method ft --logger_output tsv tensorboard
 
 # test:VCL
-python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 -tasks=CW10 --seed=0 --cl_method=vcl --cl_reg_coef=1.0 --vcl_first_task_kl=False --logger_output tsv tensorboard
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=vcl --cl_reg_coef=1.0 --vcl_first_task_kl=False --logger_output tsv tensorboard
 

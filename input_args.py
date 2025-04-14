@@ -1,8 +1,8 @@
 import argparse
 
 from myrecall.tasks import TASK_SEQS
-from continualworld.utils.enums import BufferType
-from continualworld.utils.utils import float_or_str, sci2int, str2bool
+from myrecall.utils.enums import BufferType
+from myrecall.utils.utils import float_or_str, sci2int, str2bool
 
 
 def cl_parse_args(args=None):

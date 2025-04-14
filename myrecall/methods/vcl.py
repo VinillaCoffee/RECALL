@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List, Tuple, Dict
 
 import gym
 import tensorflow as tf
@@ -43,7 +43,7 @@ class VCL_SAC(SAC):
             self.actor.core.layers + self.actor.head_mu.layers + self.actor.head_log_std.layers
         )
 
-    def get_auxiliary_loss(self, seq_idx: tf.Tensor) -> tf.Tensor:
+    def get_auxiliary_loss(self, seq_idx: tf.Tensor, aux_batch: Dict[str, tf.Tensor] = None) -> tf.Tensor:
         aux_loss = self._regularize(seq_idx, regularize_last_layer=self.first_task_kl)
         aux_loss_coef = tf.cond(
             seq_idx > 0 or self.first_task_kl, lambda: self.cl_reg_coef, lambda: 0.0

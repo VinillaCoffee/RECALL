@@ -41,7 +41,6 @@ def main(
     packnet_retrain_steps: int,
     regularize_critic: bool,
     cl_reg_coef: float,
-    first_task_kl: bool,
     vcl_first_task_kl: bool,
     policy_reg_coef:float,
     value_reg_coef:float,
@@ -143,14 +142,12 @@ def main(
         )
     elif cl_method == "vcl":
         vcl_kwargs = vanilla_sac_kwargs.copy()
-        if "tasks" in vcl_kwargs:
-            del vcl_kwargs["tasks"]
         
         sac = sac_class(
             **vcl_kwargs,
             cl_reg_coef=cl_reg_coef,
             regularize_critic=regularize_critic,
-            first_task_kl=first_task_kl
+            first_task_kl=vcl_first_task_kl
         )
     else:
         raise NotImplementedError("This method is not implemented")
