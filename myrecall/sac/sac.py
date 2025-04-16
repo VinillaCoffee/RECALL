@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from myrecall.sac import models
-from myrecall.sac.replay_buffers import ReplayBuffer, ReservoirReplayBuffer
+from myrecall.sac.replay_buffers import ReplayBuffer, ReservoirReplayBuffer, MultiTimescaleReplayBuffer
 from myrecall.sac.utils.logx import EpochLogger
 from myrecall.utils.enums import BufferType
 from myrecall.utils.utils import reset_optimizer, reset_weights, set_seed
@@ -93,7 +93,7 @@ class SAC:
           reset_buffer_on_task_change: If True, replay buffer will be cleared after every task
             change (in continual learning).
           buffer_type: Type of the replay buffer. Either 'fifo' for regular FIFO buffer
-            or 'reservoir' for reservoir sampling.
+            or 'reservoir' for reservoir sampling, or 'mtr' for multi-timescale replay buffer.
           reset_optimizer_on_task_change: If True, optimizer will be reset after every task change
             (in continual learning).
           reset_critic_on_task_change: If True, critic weights are randomly re-initialized after
@@ -157,6 +157,10 @@ class SAC:
             )
         elif buffer_type == BufferType.RESERVOIR:
             self.replay_buffer = ReservoirReplayBuffer(
+                obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size
+            )
+        elif buffer_type == BufferType.MTR:
+            self.replay_buffer = MultiTimescaleReplayBuffer(
                 obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size
             )
 

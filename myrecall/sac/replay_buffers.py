@@ -275,3 +275,159 @@ class PerfectReplayBuffer:
 #             q1=tf.convert_to_tensor(self.q1_buf[idxs]),
 #             q2=tf.convert_to_tensor(self.q2_buf[idxs]),
 #         )
+
+def proportional(nsample, buf_sizes):
+    T = np.sum(buf_sizes)
+    S = nsample
+    sample_sizes = np.zeros(len(buf_sizes), dtype=np.int64)
+    for i in range(len(buf_sizes)):
+        if S < 1:
+            break
+        sample_sizes[i] = int(round(S * buf_sizes[i] / T))
+        T -= buf_sizes[i]
+        S -= sample_sizes[i]
+    assert sum(sample_sizes) == nsample, str(sum(sample_sizes))+" and "+str(nsample)
+    return sample_sizes
+
+# MTR buffer
+class MultiTimescaleReplayBuffer(ReplayBuffer):
+    def __init__(self, size, num_buffers, beta=0.5, no_waste=True): 
+
+
+        print(size, num_buffers)
+        self.num_buffers = num_buffers
+        self._maxsize_per_buffer = size // num_buffers
+        self._maxsize = num_buffers * self._maxsize_per_buffer
+        self.beta = beta
+        self.no_waste = no_waste
+        self.count = 0
+        
+        if size % num_buffers != 0:
+            print("Warning! Size is not divisible by number of buffers. New size is: ", self._maxsize)
+        
+        self.buffers = []
+        for _ in range(num_buffers):
+            self.buffers.append(ReplayBuffer(self._maxsize_per_buffer))
+
+        if no_waste:
+            self.overflow_buffer = deque(maxlen=self._maxsize)
+            
+            
+    def __len__(self):
+        total_length = 0
+        for buf in self.buffers:
+            total_length += len(buf)
+        if self.no_waste:
+            total_length += len(self.overflow_buffer)
+        return total_length
+
+    @property
+    def storage(self):
+        """[(np.ndarray, float, float, np.ndarray, bool)]: content of the replay buffer"""
+        total_storage = []
+        for buf in self.buffers:
+            total_storage.extend(buf.storage)
+        return total_storage
+
+    @property
+    def buffer_size(self):
+        """float: Max capacity of the buffer"""
+        return self._maxsize
+
+    def can_sample(self, n_samples):
+        """
+        Check if n_samples samples can be sampled
+        from the buffer.
+        :param n_samples: (int)
+        :return: (bool)
+        """
+        return len(self) >= n_samples
+
+    def is_full(self):
+        """
+        Check whether the replay buffer is full or not.
+        :return: (bool)
+        """
+        return len(self) == self.buffer_size
+
+    def add(self, obs_t, action, reward, obs_tp1, done):
+        """
+        add a new transition to the buffer
+        :param obs_t: (Any) the last observation
+        :param action: ([float]) the action
+        :param reward: (float) the reward of the transition
+        :param obs_tp1: (Any) the current observation
+        :param done: (bool) is the episode done
+        """
+        self.count += 1
+        data = (obs_t, action, reward, obs_tp1, done)
+        popped_data = self.buffers[0].add(*data)
+        
+        for i in range(1, self.num_buffers):
+            #print("buffer ", i)
+            #print("popped: ", popped_data)
+            if popped_data == None:
+                break
+            if random.uniform(0, 1) < self.beta:
+                popped_data = self.buffers[i].add(*popped_data)
+            elif self.no_waste:
+                self.overflow_buffer.appendleft(popped_data)
+                break
+            else:
+                break
+        if self.no_waste and (self.count > self._maxsize) and (len(self.overflow_buffer) != 0):
+            self.overflow_buffer.pop()
+            
+    def _encode_sample(self, idxes):
+        obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
+        #storage = self.storage
+        if self.no_waste:
+            assert len(idxes) == (self.num_buffers + 1)
+        else:
+            assert len(idxes) == self.num_buffers
+        for buf_idx in range(len(idxes)):
+            for i in idxes[buf_idx]:
+                #print(i)
+                if buf_idx == 0 and self.no_waste:
+                    data = self.overflow_buffer[i]
+                else:
+                    data = self.buffers[buf_idx - 1].storage[i]
+                obs_t, action, reward, obs_tp1, done = data
+                obses_t.append(np.array(obs_t, copy=False))
+                actions.append(np.array(action, copy=False))
+                rewards.append(reward)
+                obses_tp1.append(np.array(obs_tp1, copy=False))
+                dones.append(done)
+            
+        return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
+
+    def sample(self, batch_size, **_kwargs):
+        """
+        Sample a batch of experiences.
+        :param batch_size: (int) How many transitions to sample.
+        :return:
+            - obs_batch: (np.ndarray) batch of observations
+            - act_batch: (numpy float) batch of actions executed given obs_batch
+            - rew_batch: (numpy float) rewards received as results of executing act_batch
+            - next_obs_batch: (np.ndarray) next set of observations seen after executing act_batch
+            - done_mask: (numpy bool) done_mask[i] = 1 if executing act_batch[i] resulted in the end of an episode
+                and 0 otherwise.
+        """
+        all_idxes = []
+        buf_lengths = [len(buf) for buf in self.buffers]
+        if self.no_waste:
+            buf_lengths.insert(0,len(self.overflow_buffer))
+
+        buffer_batch_sizes = proportional(batch_size, buf_lengths)
+        #print(buffer_batch_sizes)
+        for i in range(len(buf_lengths)):
+            idxes = [random.randint(0, buf_lengths[i] - 1) for _ in range(buffer_batch_sizes[i])]
+            all_idxes.append(idxes)
+        return self._encode_sample(all_idxes)
+
+    def get_buffer_batch_sizes(self, batch_size):
+        buf_lengths = [len(buf) for buf in self.buffers]
+        if self.no_waste:
+            buf_lengths.insert(0,len(self.overflow_buffer))
+
+        return proportional(batch_size, buf_lengths)
