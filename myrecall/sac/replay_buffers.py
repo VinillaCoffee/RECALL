@@ -405,7 +405,15 @@ class MultiTimescaleReplayBuffer(ReplayBufferFIFO):
         self.add(obs, action, reward, next_obs, done)
     
     def sample_batch(self, batch_size):
+        """SAC接口兼容方法，将sample方法的结果转换为字典格式，并确保数据类型一致"""
         obs, actions, rewards, next_obs, dones = self.sample(batch_size)
+        
+        obs = obs.astype(np.float32)
+        actions = actions.astype(np.float32)
+        rewards = rewards.astype(np.float32)
+        next_obs = next_obs.astype(np.float32)
+        dones = dones.astype(np.float32)
+        
         return dict(
             obs=tf.convert_to_tensor(obs),
             next_obs=tf.convert_to_tensor(next_obs),
