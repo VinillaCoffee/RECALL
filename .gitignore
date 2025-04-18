@@ -149,3 +149,5 @@ mjkey.txt
 
 **/__pycache__
 
+*.pyc
+
