@@ -516,10 +516,15 @@ class SAC:
         self.on_task_start(current_task_idx)
 
         if self.reset_buffer_on_task_change:
-            assert self.buffer_type == BufferType.FIFO
-            self.replay_buffer = ReplayBuffer(
-                obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_size
-            )
+            assert self.buffer_type in [BufferType.FIFO, BufferType.MTR]
+            if self.buffer_type == BufferType.FIFO:
+                self.replay_buffer = ReplayBuffer(
+                    obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_size
+                )
+            elif self.buffer_type == BufferType.MTR:
+                self.replay_buffer = MultiTimescaleReplayBuffer(
+                    obs_dim=self.obs_dim, act_dim=self.act_dim, size=self.replay_size
+                )
         if self.reset_critic_on_task_change:
             reset_weights(self.critic1, self.critic_cl, self.critic_kwargs)
             self.target_critic1.set_weights(self.critic1.get_weights())

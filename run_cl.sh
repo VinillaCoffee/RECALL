@@ -58,3 +58,6 @@ python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --se
 
 #test:MTR
 python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=mtr --logger_output tsv tensorboard
+
+#test:ft
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=ft
