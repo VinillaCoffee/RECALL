@@ -147,5 +147,5 @@ mjkey.txt
 
 /logs/
 
-
+**/__pycache__
 
