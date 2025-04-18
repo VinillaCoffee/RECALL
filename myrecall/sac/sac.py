@@ -161,7 +161,7 @@ class SAC:
             )
         elif buffer_type == BufferType.MTR:
             self.replay_buffer = MultiTimescaleReplayBuffer(
-                obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size
+                obs_dim=self.obs_dim, act_dim=self.act_dim, size=replay_size, num_buffers=20, beta=0.85, no_waste=True
             )
 
         # Create actor and critic networks

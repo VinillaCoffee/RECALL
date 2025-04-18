@@ -114,6 +114,8 @@ def main(
 
     if cl_method in ["ft", "pm"]:
         sac = sac_class(**vanilla_sac_kwargs)
+    elif cl_method in ["mtr"]:
+        sac = sac_class(**vanilla_sac_kwargs, buffer_type="multi_timescale")
     elif cl_method in ["l2", "ewc", "mas"]:
         sac = sac_class(
             **vanilla_sac_kwargs, cl_reg_coef=cl_reg_coef, regularize_critic=regularize_critic

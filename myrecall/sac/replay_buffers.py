@@ -380,9 +380,9 @@ class PerfectReplayBuffer:
 
 # MTR buffer
 class MultiTimescaleReplayBuffer(ReplayBufferFIFO):
-    def __init__(self, size, num_buffers, beta=0.85, no_waste=True): 
-
-
+    def __init__(self, obs_dim=None, act_dim=None, size=1000000, num_buffers=20, beta=0.85, no_waste=True): 
+        self.obs_dim = obs_dim
+        self.act_dim = act_dim
         print(size, num_buffers)
         self.num_buffers = num_buffers
         self._maxsize_per_buffer = size // num_buffers
@@ -396,12 +396,24 @@ class MultiTimescaleReplayBuffer(ReplayBufferFIFO):
         
         self.buffers = []
         for _ in range(num_buffers):
-            self.buffers.append(ReplayBuffer(self._maxsize_per_buffer))
+            self.buffers.append(ReplayBufferFIFO(self._maxsize_per_buffer))
 
         if no_waste:
             self.overflow_buffer = deque(maxlen=self._maxsize)
-            
-            
+
+    def store(self, obs, action, reward, next_obs, done):
+        self.add(obs, action, reward, next_obs, done)
+    
+    def sample_batch(self, batch_size):
+        obs, actions, rewards, next_obs, dones = self.sample(batch_size)
+        return dict(
+            obs=tf.convert_to_tensor(obs),
+            next_obs=tf.convert_to_tensor(next_obs),
+            actions=tf.convert_to_tensor(actions),
+            rewards=tf.convert_to_tensor(rewards),
+            done=tf.convert_to_tensor(dones),
+        )
+
     def __len__(self):
         total_length = 0
         for buf in self.buffers:
@@ -520,3 +532,53 @@ class MultiTimescaleReplayBuffer(ReplayBufferFIFO):
             buf_lengths.insert(0,len(self.overflow_buffer))
 
         return proportional(batch_size, buf_lengths)
+
+def get_replay_buffer(name):
+    if name == 'fifo':
+        return ReplayBuffer
+    elif name == 'reservoir':
+        return ReservoirReplayBuffer
+    elif name == 'multi_timescale':
+        return MultiTimescaleReplayBuffer
+
+if __name__=="__main__":
+    import matplotlib.pyplot as plt
+    
+    buffer_type = 'multi_timescale'
+    buffer_args = {'size': 100000, 'num_buffers': 20, 'beta': 0.85}
+    reservoir = get_replay_buffer(buffer_type)(**buffer_args)
+    lengths = []
+    sim_length = 500000
+    for i in range(sim_length):
+        if i % 10000 == 1:
+            print(i)
+        reservoir.add(i, i, i, i, False)
+        lengths.append(len(reservoir))
+    sample = reservoir.sample(10000)
+    if buffer_type=='multi_timescale':
+        print(len(reservoir.overflow_buffer))
+    times = []
+    sample_times = []
+    if buffer_type == 'reservoir':
+        for data in reservoir.storage:
+            times.append(sim_length-data[1][0])
+    else:
+        for data in reservoir.storage:
+            times.append(sim_length-data[0])
+
+    # Histogram of experience age
+    fig=plt.figure()
+    plt.hist(times, bins=range(0,sim_length,1000))
+    plt.xlabel('Age', size=16)
+    plt.ylabel('Number of experiences', size=16)
+    plt.xlim([0, sim_length])
+    plt.ylim([0, 1100])
+    fig.savefig(buffer_type+"_replay_histogram")
+
+    # Histogram of ages of sample
+    fig2 = plt.figure()
+    plt.hist(sample[0], bins=100)
+    plt.xlabel('Age', size=16)
+    plt.ylabel('Number of experiences', size=16)
+    fig2.savefig(buffer_type+"_replay_histogram_sample")
+    plt.show()

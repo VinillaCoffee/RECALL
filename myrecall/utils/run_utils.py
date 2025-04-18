@@ -12,7 +12,7 @@ from myrecall.sac.sac import SAC
 
 
 def get_sac_class(cl_method: str) -> Type[SAC]:
-    if cl_method in ["ft", "pm"]:
+    if cl_method in ["ft", "pm","mtr"]:
         return SAC
     if cl_method == "recall":
         return RECALL_SAC
