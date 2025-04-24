@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import tensorflow as tf
 
-from continualworld.methods.regularization import Regularization_SAC
+from myrecall.methods.regularization import Regularization_SAC
 
 
 class MAS_SAC(Regularization_SAC):

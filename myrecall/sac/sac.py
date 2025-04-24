@@ -413,28 +413,15 @@ class SAC:
             self.on_test_start(seq_idx)
 
             for j in range(num_episodes):
-                # 处理环境初始化
-                try:
-                    # 尝试新版API
-                    result = test_env.reset()
-                    if isinstance(result, tuple) and len(result) == 2:
-                        obs, _ = result  # 在新版API中返回(observation, info)
-                    else:
-                        obs = result
-                except:
-                    # 兼容旧版API
-                    obs = test_env.reset()
+                # 使用新版API初始化环境
+                obs, _ = test_env.reset()
                 
                 done, episode_return, episode_len = False, 0, 0
                 while not (done or (episode_len == self.max_episode_len)):
                     action = self.get_action_test(tf.convert_to_tensor(obs), tf.constant(deterministic))
-                    try:
-                        # 尝试新版API (5个返回值)
-                        obs, reward, terminated, truncated, info = test_env.step(action)
-                        done = terminated or truncated
-                    except ValueError:
-                        # 兼容旧版API (4个返回值)
-                        obs, reward, done, info = test_env.step(action)
+                    # 使用新版API
+                    obs, reward, terminated, truncated, info = test_env.step(action)
+                    done = terminated or truncated
                     
                     episode_return += reward
                     episode_len += 1
@@ -545,18 +532,8 @@ class SAC:
         """A method to run the SAC training, after the object has been created."""
         self.start_time = time.time()
         
-        # 处理环境初始化
-        try:
-            # 尝试新版API
-            result = self.env.reset()
-            if isinstance(result, tuple) and len(result) == 2:
-                obs, _ = result  # 在新版API中返回(observation, info)
-            else:
-                obs = result
-        except:
-            # 兼容旧版API
-            obs = self.env.reset()
-            
+        # 使用新版API初始化环境
+        obs, _ = self.env.reset()
         episode_return, episode_len = 0, 0
 
         # Main loop: collect experience in env and update/log each epoch
@@ -581,14 +558,9 @@ class SAC:
             else:
                 action = self.env.action_space.sample()
 
-            # Step the env
-            try:
-                # 尝试新版API (5个返回值)
-                next_obs, reward, terminated, truncated, info = self.env.step(action)
-                done = terminated or truncated
-            except ValueError:
-                # 兼容旧版API (4个返回值)
-                next_obs, reward, done, info = self.env.step(action)
+            # Step the env - 使用新版API
+            next_obs, reward, terminated, truncated, info = self.env.step(action)
+            done = terminated or truncated
                 
             episode_return += reward
             episode_len += 1
@@ -612,16 +584,8 @@ class SAC:
                 self.logger.store({"train/return": episode_return, "train/ep_length": episode_len})
                 episode_return, episode_len = 0, 0
                 if global_timestep < self.steps - 1:
-                    try:
-                        # 尝试新版API
-                        result = self.env.reset()
-                        if isinstance(result, tuple) and len(result) == 2:
-                            obs, _ = result  # 在新版API中返回(observation, info)
-                        else:
-                            obs = result
-                    except:
-                        # 兼容旧版API
-                        obs = self.env.reset()
+                    # 使用新版API重置环境
+                    obs, _ = self.env.reset()
 
             # Update handling
             if (

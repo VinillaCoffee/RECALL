@@ -16,16 +16,8 @@ class SuccessCounter(gym.Wrapper):
         self.current_success = False
 
     def step(self, action: Any) -> Tuple:
-        # 处理新版gym (gymnasium)
-        result = self.env.step(action)
-        if len(result) == 5:
-            # 新版本的gymnasium返回5个值
-            obs, reward, terminated, truncated, info = result
-        else:
-            # 旧版本的gym返回4个值
-            obs, reward, done, info = result
-            terminated = done
-            truncated = False
+        # 直接使用新版API
+        obs, reward, terminated, truncated, info = self.env.step(action)
             
         if info.get("success", False):
             self.current_success = True
@@ -41,14 +33,8 @@ class SuccessCounter(gym.Wrapper):
 
     def reset(self, **kwargs) -> tuple:
         self.current_success = False
-        result = self.env.reset(**kwargs)
-        # 处理新旧版本的reset接口
-        if isinstance(result, tuple) and len(result) == 2:
-            # 新版本返回(obs, info)
-            return result
-        else:
-            # 旧版本直接返回obs
-            return result, {}
+        # 直接使用新版API
+        return self.env.reset(**kwargs)
 
 
 class OneHotAdder(gym.Wrapper):
@@ -80,28 +66,15 @@ class OneHotAdder(gym.Wrapper):
         return np.concatenate([obs, self.to_append])
 
     def step(self, action: Any) -> Tuple:
-        # 处理新版gym (gymnasium)
-        result = self.env.step(action)
-        if len(result) == 5:
-            # 新版本的gymnasium返回5个值
-            obs, reward, terminated, truncated, info = result
-        else:
-            # 旧版本的gym返回4个值
-            obs, reward, done, info = result
-            terminated = done
-            truncated = False
+        # 直接使用新版API
+        obs, reward, terminated, truncated, info = self.env.step(action)
             
         return self._append_one_hot(obs), reward, terminated, truncated, info
 
     def reset(self, **kwargs) -> tuple:
-        result = self.env.reset(**kwargs)
-        # 处理新旧版本的reset接口
-        if isinstance(result, tuple) and len(result) == 2:
-            # 新版本返回(obs, info)
-            return self._append_one_hot(result[0]), result[1]
-        else:
-            # 旧版本直接返回obs
-            return self._append_one_hot(result), {}
+        # 直接使用新版API
+        obs, info = self.env.reset(**kwargs)
+        return self._append_one_hot(obs), info
 
 
 class RandomizationWrapper(gym.Wrapper):
@@ -141,11 +114,5 @@ class RandomizationWrapper(gym.Wrapper):
             )
             self.env._last_rand_vec = rand_vec
 
-        result = self.env.reset(**kwargs)
-        # 处理新旧版本的reset接口
-        if isinstance(result, tuple) and len(result) == 2:
-            # 新版本返回(obs, info)
-            return result
-        else:
-            # 旧版本直接返回obs
-            return result, {}
+        # 直接使用新版API
+        return self.env.reset(**kwargs)

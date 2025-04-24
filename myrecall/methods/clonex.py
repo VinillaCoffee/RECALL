@@ -74,12 +74,8 @@ class ClonEx_SAC(SAC):
             one_hot[head_idx] = 1.0
             episode_returns = []
             for j in range(num_episodes):
-                # 处理新版API返回格式
-                reset_result = test_env.reset()
-                if isinstance(reset_result, tuple):
-                    obs = reset_result[0]  # 新版本API返回(obs, info)
-                else:
-                    obs = reset_result     # 旧版本API直接返回obs
+                # 直接使用新版API
+                obs, _ = test_env.reset()
                 
                 done, episode_return, episode_len = False, 0, 0
                 
@@ -96,16 +92,11 @@ class ClonEx_SAC(SAC):
                     # 将观察向量分成两部分，然后重新组合
                     obs_with_one_hot = np.concatenate([obs[:MW_OBS_LEN], new_one_hot])
                     
-                    # 使用step方法并处理返回值
-                    step_result = test_env.step(
+                    # 使用新版API
+                    obs, reward, terminated, truncated, _ = test_env.step(
                         self.get_action_test(tf.convert_to_tensor(obs_with_one_hot))
                     )
-                    
-                    if len(step_result) == 5:  # 新版本API
-                        obs, reward, terminated, truncated, _ = step_result
-                        done = terminated or truncated
-                    else:  # 旧版本API
-                        obs, reward, done, _ = step_result
+                    done = terminated or truncated
                         
                     episode_return += reward
                     episode_len += 1

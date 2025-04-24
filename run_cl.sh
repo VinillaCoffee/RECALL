@@ -57,7 +57,12 @@ python run_cl.py --seed 0 --steps_per_task 5e5 --log_every 1e4 --tasks CW10 --cl
 python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=vcl --cl_reg_coef=1.0 --vcl_first_task_kl=False --logger_output tsv tensorboard
 
 #test:MTR
-python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=mtr --logger_output tsv tensorboard
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=mtr --reset_buffer_on_task_change=False --replay_size=5e6 --logger_output tsv tensorboard
+#replay_size=1e6
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --seed=0 --cl_method=mtr --logger_output tsv tensorboard --reset_buffer_on_task_change=False
 
 #test:ft
 python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=ft
+
+#test:reservoir
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=pm --buffer_type=reservoir --reset_buffer_on_task_change=False --replay_size=5e6

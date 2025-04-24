@@ -136,16 +136,9 @@ class ContinualLearningEnv(gym.Env):
 
     def step(self, action: Any) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         self._check_steps_bound()
-        result = self.envs[self.cur_seq_idx].step(action)
-        
-        # 处理新旧版本的gym接口
-        if len(result) == 5:
-            obs, reward, terminated, truncated, info = result
-            done = terminated or truncated
-        else:
-            obs, reward, done, info = result
-            terminated = done
-            truncated = False
+        # 直接使用新版API
+        obs, reward, terminated, truncated, info = self.envs[self.cur_seq_idx].step(action)
+        done = terminated or truncated
             
         info["seq_idx"] = self.cur_seq_idx
 
@@ -164,14 +157,8 @@ class ContinualLearningEnv(gym.Env):
 
     def reset(self) -> Tuple[np.ndarray, Dict]:
         self._check_steps_bound()
-        result = self.envs[self.cur_seq_idx].reset()
-        # 处理新旧版本的reset接口
-        if isinstance(result, tuple) and len(result) == 2:
-            # 新版本返回(obs, info)
-            return result
-        else:
-            # 旧版本直接返回obs
-            return result, {}
+        # 直接使用新版API
+        return self.envs[self.cur_seq_idx].reset()
 
 
 def get_cl_env(
@@ -243,15 +230,8 @@ class MultiTaskEnv(gym.Env):
 
     def step(self, action: Any) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         self._check_steps_bound()
-        result = self.envs[self._cur_seq_idx].step(action)
-        
-        # 处理新旧版本的gym接口
-        if len(result) == 5:
-            obs, reward, terminated, truncated, info = result
-        else:
-            obs, reward, done, info = result
-            terminated = done
-            truncated = False
+        # 直接使用新版API
+        obs, reward, terminated, truncated, info = self.envs[self._cur_seq_idx].step(action)
             
         info["mt_seq_idx"] = self._cur_seq_idx
         if self.cycle_mode == "step":
@@ -264,14 +244,8 @@ class MultiTaskEnv(gym.Env):
         self._check_steps_bound()
         if self.cycle_mode == "episode":
             self._cur_seq_idx = (self._cur_seq_idx + 1) % self.num_envs
-        result = self.envs[self._cur_seq_idx].reset()
-        # 处理新旧版本的reset接口
-        if isinstance(result, tuple) and len(result) == 2:
-            # 新版本返回(obs, info)
-            return result
-        else:
-            # 旧版本直接返回obs
-            return result, {}
+        # 直接使用新版API
+        return self.envs[self._cur_seq_idx].reset()
 
 
 def get_mt_env(

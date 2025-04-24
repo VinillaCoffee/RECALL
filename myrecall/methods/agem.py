@@ -2,8 +2,8 @@ from typing import Dict, List, Optional, Tuple
 
 import tensorflow as tf
 
-from continualworld.sac.replay_buffers import EpisodicMemory
-from continualworld.sac.sac import SAC
+from myrecall.sac.replay_buffers import EpisodicMemory
+from myrecall.sac.sac import SAC
 
 
 class AGEM_SAC(SAC):
