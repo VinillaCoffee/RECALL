@@ -153,7 +153,7 @@ def main(
             regularize_critic=regularize_critic,
             first_task_kl=vcl_first_task_kl
         )
-    elif cl_method == "3RL":
+    elif cl_method == "3rl":
         sac = sac_class(
             **vanilla_sac_kwargs,
             history_length=15,
