@@ -9,6 +9,7 @@ from myrecall.methods.agem import AGEM_SAC
 from myrecall.methods.mas import MAS_SAC
 from myrecall.methods.vcl import VCL_SAC
 from myrecall.sac.sac import SAC
+from myrecall.methods.TriRL import TriRL_SAC
 
 
 def get_sac_class(cl_method: str) -> Type[SAC]:
@@ -30,4 +31,6 @@ def get_sac_class(cl_method: str) -> Type[SAC]:
         return L2_SAC
     if cl_method == "agem":
         return AGEM_SAC
+    if cl_method == "3rl":
+        return TriRL_SAC
     assert False, "Bad cl_method!"

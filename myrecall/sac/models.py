@@ -348,3 +348,227 @@ class PopArtMlpCritic(MlpCritic):
         self.moment1.assign(new_moment1)
         self.moment2.assign(new_moment2)
         self.sigma.assign(new_sigma)
+
+
+class ContextRNN(tf.keras.Model):
+    """GRU-based RNN用于处理历史信息"""
+    
+    def __init__(
+        self,
+        hidden_dim: int = 50,
+        input_dim: int = None,
+        history_length: int = 1,
+        action_dim: int = None,
+        obsr_dim: int = None,
+        device: str = "cpu",
+        num_layers: int = 1,
+    ):
+        super(ContextRNN, self).__init__()
+        self.input_dim = input_dim
+        self.hist_length = history_length
+        self.hidden_dim = hidden_dim
+        self.action_dim = action_dim
+        self.obsr_dim = obsr_dim
+        
+        # 创建GRU层
+        self.recurrent = tf.keras.layers.GRU(
+            self.hidden_dim,
+            return_sequences=False,
+            return_state=True,
+            batch_input_shape=(None, None, self.input_dim)
+        )
+        
+    def call(self, data, training=False):
+        """
+        输入:
+        - data: 包含历史动作、奖励和观察的元组 [previous_action, previous_reward, pre_x]
+        
+        输出:
+        - GRU的最终隐藏状态
+        """
+        previous_action, previous_reward, pre_x = data[0], data[1], data[2]
+        
+        # 准备数据格式
+        batch_size = tf.shape(previous_action)[0]
+        
+        # 确保输入维度正确
+        pacts = tf.reshape(previous_action, [batch_size, -1, self.action_dim])
+        prews = tf.reshape(previous_reward, [batch_size, -1, 1])
+        pxs = tf.reshape(pre_x, [batch_size, -1, self.obsr_dim])
+        
+        # 连接动作、奖励和观察作为RNN输入
+        pre_act_rew = tf.concat([pacts, prews, pxs], axis=-1)
+        
+        # 通过GRU处理序列
+        outputs, last_state = self.recurrent(pre_act_rew, training=training)
+        
+        return last_state
+    
+
+class RNNActor(MlpActor):
+    """使用RNN编码历史信息的Actor网络"""
+    
+    def __init__(
+        self,
+        input_dim,
+        action_space,
+        hidden_sizes=(256, 256),
+        activation=tf.tanh,
+        use_layer_norm=False,
+        num_heads=1,
+        hide_task_id=False,
+        history_length=1,
+        context_dim=50,
+        context_input_dim=None,
+        obsr_dim=None,
+    ):
+        # 保存RNN相关参数
+        self.history_length = history_length
+        self.context_dim = context_dim
+        self.obsr_dim = obsr_dim
+        
+        # 创建ContextRNN处理历史信息
+        if context_input_dim is None:
+            context_input_dim = action_space.shape[0] + 1 + obsr_dim  # 动作维度 + 奖励维度 + 观察维度
+            
+        self.context_rnn = ContextRNN(
+            hidden_dim=context_dim,
+            input_dim=context_input_dim,
+            history_length=history_length,
+            action_dim=action_space.shape[0],
+            obsr_dim=obsr_dim,
+        )
+        
+        # 使用基类初始化，输入维度增加context_dim
+        super(RNNActor, self).__init__(
+            input_dim=input_dim + context_dim,  # 增加RNN输出的上下文维度
+            action_space=action_space,
+            hidden_sizes=hidden_sizes,
+            activation=activation,
+            use_layer_norm=use_layer_norm,
+            num_heads=num_heads,
+            hide_task_id=hide_task_id,
+        )
+    
+    def call(self, x, pre_act_rew=None, deterministic=False):
+        """
+        输入:
+        - x: 观察数据 [batch_size, obs_dim]
+        - pre_act_rew: 包含历史动作、奖励和观察的元组 [batch_size, history_length, features]
+        - deterministic: 是否使用确定性策略
+        
+        输出:
+        - 动作均值、对数标准差、样本动作、对数概率
+        """
+        # 如果提供了历史信息，则使用RNN进行编码
+        if pre_act_rew is not None:
+            # 从RNN获取上下文表示
+            context = self.context_rnn(pre_act_rew)
+            # 将原始观察和上下文连接
+            combined_input = tf.concat([x, context], axis=-1)
+        else:
+            # 如果没有历史信息，用零填充
+            batch_size = tf.shape(x)[0]
+            zeros = tf.zeros([batch_size, self.context_dim], dtype=x.dtype)
+            combined_input = tf.concat([x, zeros], axis=-1)
+        
+        # 调用基类实现的前向传播，获取策略输出
+        mu, log_std, pi, logp_pi = super(RNNActor, self).call(combined_input)
+        
+        return mu, log_std, pi, logp_pi
+    
+    def predict_pi(self, x, pre_act_rew=None):
+        """
+        预测动作分布的均值和标准差（用于行为克隆）
+        """
+        # 如果提供了历史信息，则使用RNN进行编码
+        if pre_act_rew is not None:
+            # 从RNN获取上下文表示
+            context = self.context_rnn(pre_act_rew)
+            # 将原始观察和上下文连接
+            combined_input = tf.concat([x, context], axis=-1)
+        else:
+            # 如果没有历史信息，用零填充
+            batch_size = tf.shape(x)[0]
+            zeros = tf.zeros([batch_size, self.context_dim], dtype=x.dtype)
+            combined_input = tf.concat([x, zeros], axis=-1)
+        
+        # 调用基类方法获取策略分布
+        mu, std = super(RNNActor, self).predict_pi(combined_input)
+        return mu, std
+
+
+class RNNCritic(MlpCritic):
+    """使用RNN编码历史信息的Critic网络"""
+    
+    def __init__(
+        self,
+        input_dim,
+        hidden_sizes=(256, 256),
+        activation=tf.tanh,
+        use_layer_norm=False,
+        num_heads=1,
+        use_separate_critic=False,
+        use_multi_layer_head=False,
+        hide_task_id=False,
+        history_length=1,
+        context_dim=50,
+        context_input_dim=None,
+        obsr_dim=None,
+        action_space=None,
+    ):
+        # 保存RNN相关参数
+        self.history_length = history_length
+        self.context_dim = context_dim
+        self.obsr_dim = obsr_dim
+        
+        # 创建ContextRNN处理历史信息
+        if context_input_dim is None and action_space is not None:
+            context_input_dim = action_space.shape[0] + 1 + obsr_dim  # 动作维度 + 奖励维度 + 观察维度
+            
+        self.context_rnn = ContextRNN(
+            hidden_dim=context_dim,
+            input_dim=context_input_dim,
+            history_length=history_length,
+            action_dim=action_space.shape[0] if action_space is not None else None,
+            obsr_dim=obsr_dim,
+        )
+        
+        # 使用基类初始化，输入维度增加context_dim
+        super(RNNCritic, self).__init__(
+            input_dim=input_dim + context_dim,  # 增加RNN输出的上下文维度
+            hidden_sizes=hidden_sizes,
+            activation=activation,
+            use_layer_norm=use_layer_norm,
+            num_heads=num_heads,
+            use_separate_critic=use_separate_critic,
+            use_multi_layer_head=use_multi_layer_head,
+            hide_task_id=hide_task_id,
+        )
+    
+    def call(self, x, a, pre_act_rew=None):
+        """
+        输入:
+        - x: 观察数据 [batch_size, obs_dim]
+        - a: 动作 [batch_size, action_dim]
+        - pre_act_rew: 包含历史动作、奖励和观察的元组 [batch_size, history_length, features]
+        
+        输出:
+        - Q值估计
+        """
+        # 如果提供了历史信息，则使用RNN进行编码
+        if pre_act_rew is not None:
+            # 从RNN获取上下文表示
+            context = self.context_rnn(pre_act_rew)
+            # 将原始观察和上下文连接
+            combined_input = tf.concat([x, context], axis=-1)
+        else:
+            # 如果没有历史信息，用零填充
+            batch_size = tf.shape(x)[0]
+            zeros = tf.zeros([batch_size, self.context_dim], dtype=x.dtype)
+            combined_input = tf.concat([x, zeros], axis=-1)
+        
+        # 调用基类实现的前向传播，获取Q值
+        q_value = super(RNNCritic, self).call(combined_input, a)
+        
+        return q_value 

@@ -64,5 +64,8 @@ python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --se
 #test:ft
 python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=ft
 
+#test:3RL
+python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=3rl --logger_output tsv tensorboard
+
 #test:reservoir
 python run_cl.py --tasks=CW10 --seed=0 --steps_per_task=5e5 --log_every=1e4 --cl_method=pm --buffer_type=reservoir --reset_buffer_on_task_change=False --replay_size=5e6

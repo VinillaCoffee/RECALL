@@ -123,10 +123,10 @@ def cl_parse_args(args=None):
     parser.add_argument(
         "--cl_method",
         type=str,
-        choices=["ft", "ewc", "clonex", "packnet", "pm", "recall","vcl","l2","mas","agem","mtr"],
+        choices=["ft", "ewc", "clonex", "packnet", "pm", "recall","vcl","l2","mas","agem","mtr","3rl"],
         default=None,
         help="If None, finetuning method will be used. If one of 'l2', 'ewc', 'mas', 'vcl',"
-        "'packnet', 'agem', 'mtr', respective method will be used.",
+        "'packnet', 'agem', 'mtr', '3rl', respective method will be used.",
     )
     parser.add_argument(
         "--packnet_retrain_steps",

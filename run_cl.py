@@ -153,6 +153,12 @@ def main(
             regularize_critic=regularize_critic,
             first_task_kl=vcl_first_task_kl
         )
+    elif cl_method == "3RL":
+        sac = sac_class(
+            **vanilla_sac_kwargs,
+            history_length=15,
+            context_dim=500,
+        )   
     else:
         raise NotImplementedError("This method is not implemented")
     sac.run()
