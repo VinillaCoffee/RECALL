@@ -355,7 +355,7 @@ class ContextRNN(tf.keras.Model):
     
     def __init__(
         self,
-        hidden_dim: int = 50,
+        hidden_dim: int = 64,
         input_dim: int = None,
         history_length: int = 15,
         action_dim: int = None,

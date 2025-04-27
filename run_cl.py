@@ -157,7 +157,7 @@ def main(
         sac = sac_class(
             **vanilla_sac_kwargs,
             history_length=15,
-            context_dim=500,
+            context_dim=30,
         )   
     else:
         raise NotImplementedError("This method is not implemented")

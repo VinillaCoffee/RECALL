@@ -11,7 +11,7 @@ class TriRL_SAC(SAC):
     def __init__(
         self,
         history_length=15,  # 对应伪代码中的h
-        context_dim=500,    # 对应动态任务表示z的维度
+        context_dim=30,    # 对应动态任务表示z的维度
         replay_ratio=0.5,   # 对应伪代码中的β，旧缓冲区采样比例
         **vanilla_sac_kwargs
     ):
