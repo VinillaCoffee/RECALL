@@ -7,7 +7,7 @@ from typing import Callable, Iterable
 
 from myrecall.envs import get_cl_env, get_single_env
 from myrecall.sac.utils.logx import EpochLogger
-from myrecall.sac import models
+from myrecall.sac import cotasp_model
 from myrecall.tasks import TASK_SEQS
 from myrecall.utils.enums import BufferType
 from myrecall.utils.run_utils import get_sac_class
@@ -80,9 +80,9 @@ def main(
     )
 
     if use_popArt:
-        critic_cl = models.PopArtMlpCritic
+        critic_cl = cotasp_model.PopArtMlpCritic
     else:
-        critic_cl = models.MlpCritic
+        critic_cl = cotasp_model.MlpCritic
 
     vanilla_sac_kwargs = {
         "tasks": tasks,

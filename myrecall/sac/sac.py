@@ -7,7 +7,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 
-from myrecall.sac import models
+from myrecall.sac import cotasp_model
 from myrecall.sac.replay_buffers import ReplayBuffer, ReservoirReplayBuffer, MultiTimescaleReplayBuffer
 from myrecall.sac.utils.logx import EpochLogger
 from myrecall.utils.enums import BufferType
@@ -22,9 +22,9 @@ class SAC:
         env: gym.Env,
         test_envs: List[gym.Env],
         logger: EpochLogger,
-        actor_cl: type = models.MlpActor,
+        actor_cl: type = cotasp_model.MlpActor,
         actor_kwargs: Dict = None,
-        critic_cl: type = models.MlpCritic,
+        critic_cl: type = cotasp_model.MlpCritic,
         critic_kwargs: Dict = None,
         seed: int = 0,
         steps: int = 1_000_000,
@@ -320,7 +320,7 @@ class SAC:
             min_target_q = tf.minimum(target_q1, target_q2)
 
             # Entropy-regularized Bellman backup for Q functions, using Clipped Double-Q targets
-            if self.critic_cl is models.PopArtMlpCritic:
+            if self.critic_cl is cotasp_model.PopArtMlpCritic:
                 q_backup = tf.stop_gradient(
                     self.critic1.normalize(
                         rewards
@@ -375,7 +375,7 @@ class SAC:
             alpha_gradient = None
         del g
 
-        if self.critic_cl is models.PopArtMlpCritic:
+        if self.critic_cl is cotasp_model.PopArtMlpCritic:
             self.critic1.update_stats(q_backup, obs)
 
         gradients = (actor_gradients, critic_gradients, alpha_gradient)

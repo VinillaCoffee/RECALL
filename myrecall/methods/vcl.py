@@ -6,7 +6,7 @@ import tensorflow.keras as tfk
 from tensorflow.keras import Input, Model
 
 from myrecall.envs import MW_OBS_LEN
-from myrecall.sac.models import _choose_head, apply_squashing_func, gaussian_likelihood
+from myrecall.sac.cotasp_model import _choose_head, apply_squashing_func, gaussian_likelihood
 from myrecall.sac.sac import SAC
 
 EPS = 1e-8

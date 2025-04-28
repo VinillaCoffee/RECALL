@@ -3,7 +3,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
 
 from myrecall.sac.sac import SAC
-from myrecall.sac.models import ContextRNN
+from myrecall.sac.cotasp_model import ContextRNN
 from myrecall.sac.replay_buffers import ReplayBuffer
 
 

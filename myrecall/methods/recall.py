@@ -7,7 +7,7 @@ import tensorflow as tf
 
 from myrecall.sac.replay_buffers import PerfectReplayBuffer, ExpertReplayBuffer
 from myrecall.sac.sac import SAC
-from myrecall.sac import models
+from myrecall.sac import cotasp_model
 
 from myrecall.utils.utils import reset_optimizer
 from myrecall.envs import MW_OBS_LEN
@@ -123,7 +123,7 @@ class RECALL_SAC(SAC):
             min_target_q = tf.minimum(target_q1, target_q2)
 
             # Entropy-regularized Bellman backup for Q functions, using Clipped Double-Q targets
-            if self.critic_cl is models.PopArtMlpCritic:
+            if self.critic_cl is cotasp_model.PopArtMlpCritic:
                 q_backup = tf.stop_gradient(
                     self.critic1.normalize(
                         rewards
@@ -192,7 +192,7 @@ class RECALL_SAC(SAC):
             alpha_gradient = None
         del g
 
-        if self.critic_cl is models.PopArtMlpCritic:
+        if self.critic_cl is cotasp_model.PopArtMlpCritic:
             self.critic1.update_stats(q_backup, obs)
 
         gradients = (actor_gradients, critic_gradients, alpha_gradient)
