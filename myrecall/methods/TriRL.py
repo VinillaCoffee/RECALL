@@ -495,20 +495,13 @@ class TriRL_SAC(SAC):
         # 从缓冲区获取历史数据
         batch_size = tf.shape(obs)[0]
         
-        # 不再使用全零初始化，而是添加一些随机噪声，确保任务表示不为零
         # 创建带有小随机值的历史数据
         h_a = tf.random.normal([batch_size, self.history_length, self.action_dim], 
-                               mean=0.0, stddev=0.01, dtype=tf.float32)
+                                mean=0.0, stddev=0.01, dtype=tf.float32)
         h_r = tf.random.normal([batch_size, self.history_length, 1], 
-                               mean=0.0, stddev=0.01, dtype=tf.float32)
+                                mean=0.0, stddev=0.01, dtype=tf.float32)
         h_o = tf.random.normal([batch_size, self.history_length, self.obs_dim], 
-                               mean=0.0, stddev=0.01, dtype=tf.float32)
-        
-        # 调试信息：检查历史数据
-        tf.print("Debug - history data:")
-        tf.print("  history action mean:", tf.reduce_mean(tf.abs(h_a)))
-        tf.print("  history reward mean:", tf.reduce_mean(tf.abs(h_r)))
-        tf.print("  history observation mean:", tf.reduce_mean(tf.abs(h_o)))
+                                mean=0.0, stddev=0.01, dtype=tf.float32)
         
         # 准备当前历史和下一步历史
         actions_3d = tf.expand_dims(actions, axis=1)  # [batch_size, 1, action_dim]
@@ -535,7 +528,6 @@ class TriRL_SAC(SAC):
                 task_representation = self.compute_task_representation(pre_act_rew, training=True)
                 next_task_representation = self.compute_task_representation(next_pre_act_rew, training=True)
             except Exception as e:
-                tf.print("Error in compute_task_representation:", e)
                 # 提供一个合理的任务表示替代值
                 task_representation = tf.random.normal([batch_size, self.context_dim], 
                                                       mean=0.0, stddev=0.1, dtype=tf.float32)
@@ -563,17 +555,6 @@ class TriRL_SAC(SAC):
             next_task_representation = tf.cond(is_zero_next_task_rep, add_noise_to_next_task_rep, 
                                             lambda: next_task_representation)
             
-            # 调试：打印任务表示
-            tf.print("Debug - task representations:")
-            tf.print("  Current task representation mean:", tf.reduce_mean(tf.abs(task_representation)))
-            tf.print("  Next task representation mean:", tf.reduce_mean(tf.abs(next_task_representation)))
-            
-            # 调试信息：输入张量的形状和类型
-            tf.print("Debug - Input tensors:")
-            tf.print("  obs shape:", tf.shape(obs), "dtype:", obs.dtype)
-            tf.print("  actions shape:", tf.shape(actions), "dtype:", actions.dtype)
-            tf.print("  task_representation shape:", tf.shape(task_representation), "dtype:", task_representation.dtype)
-
             # 将任务表示与观测结合
             obs_with_context = tf.concat([obs, task_representation], axis=-1)
             next_obs_with_context = tf.concat([next_obs, next_task_representation], axis=-1)
@@ -582,79 +563,16 @@ class TriRL_SAC(SAC):
             obs_with_context = tf.cast(obs_with_context, dtype=tf.float32)
             next_obs_with_context = tf.cast(next_obs_with_context, dtype=tf.float32)
             
-            # 调试信息：输入到网络的维度
-            tf.print("Debug - obs_with_context shape:", tf.shape(obs_with_context), "dtype:", obs_with_context.dtype)
-            tf.print("Debug - actions shape:", tf.shape(actions), "dtype:", actions.dtype)
-
             # 传入带有任务表示的观测获取动作和Q值
             mu, log_std, pi, logp_pi = self.actor(obs_with_context, training=True)
-            
-            # 调试：添加一些随机测试，看看critic是否能产生非零值
-            random_noise = tf.random.normal(tf.shape(actions), mean=0.0, stddev=0.1, dtype=tf.float32)
-            test_actions = actions + random_noise
-            test_q1 = self.critic1(obs_with_context, test_actions, training=True)
-            tf.print("Debug - Random test q1 mean:", tf.reduce_mean(test_q1))
             
             # 将动作和带上下文的观测传给critic
             q1 = self.critic1(obs_with_context, actions, training=True)
             q2 = self.critic2(obs_with_context, actions, training=True)
-            
-            # 检查q1和q2是否接近0
-            is_q1_near_zero = tf.reduce_mean(tf.abs(q1)) < 1e-4
-            is_q2_near_zero = tf.reduce_mean(tf.abs(q2)) < 1e-4
-            
-            # 如果Q值接近0，打印更多诊断信息并测试网络
-            def print_debug_info():
-                tf.print("WARNING: Q values are close to zero!")
-                # 检查critic网络的权重和结构
-                tf.print("Critic网络结构:")
-                for i in range(len(self.critic1.core.layers)):
-                    layer = self.critic1.core.layers[i]
-                    tf.print("  Layer", i, ":", layer.__class__.__name__)
-                
-                # 找到第一个有kernel的层
-                for i in range(len(self.critic1.core.layers)):
-                    layer = self.critic1.core.layers[i]
-                    if hasattr(layer, 'kernel'):
-                        tf.print("Critic1 Dense层权重均值:", tf.reduce_mean(layer.kernel))
-                        tf.print("Critic1 Dense层偏置均值:", tf.reduce_mean(layer.bias))
-                        break
-                
-                # 检查最后一层
-                if hasattr(self.critic1.head, 'layers'):
-                    last_layer = self.critic1.head.layers[-1]
-                    if hasattr(last_layer, 'kernel'):
-                        tf.print("Critic1最后一层权重均值:", tf.reduce_mean(last_layer.kernel))
-                        tf.print("Critic1最后一层偏置均值:", tf.reduce_mean(last_layer.bias))
-                
-                # 使用随机输入测试critic网络
-                test_obs = tf.random.normal([1, self.obs_dim + self.context_dim], dtype=tf.float32)
-                test_act = tf.random.normal([1, self.action_dim], dtype=tf.float32)
-                test_q1 = self.critic1(test_obs, test_act, training=False)
-                test_q2 = self.critic2(test_obs, test_act, training=False)
-                tf.print("随机输入测试 - Critic1输出:", test_q1)
-                tf.print("随机输入测试 - Critic2输出:", test_q2)
-                
-                # 检查当前输入是否全为0
-                tf.print("当前输入obs_with_context平均值:", tf.reduce_mean(tf.abs(obs_with_context)))
-                tf.print("当前输入actions平均值:", tf.reduce_mean(tf.abs(actions)))
-                
-                # 检查任务表示
-                tf.print("任务表示平均绝对值:", tf.reduce_mean(tf.abs(task_representation)))
-                
-                return tf.constant(0)
-            
-            tf.cond(tf.logical_or(is_q1_near_zero, is_q2_near_zero), 
-                    print_debug_info, 
-                    lambda: tf.constant(0))
 
             # 使用当前策略计算Q值
             q1_pi = self.critic1(obs_with_context, pi, training=True)
             q2_pi = self.critic2(obs_with_context, pi, training=True)
-            
-            # 调试信息：打印策略Q值
-            tf.print("Debug - q1_pi mean:", tf.reduce_mean(q1_pi))
-            tf.print("Debug - q2_pi mean:", tf.reduce_mean(q2_pi))
 
             # 获取下一个状态的动作和对数概率
             _, _, pi_next, logp_pi_next = self.actor(next_obs_with_context, training=True)
@@ -662,93 +580,21 @@ class TriRL_SAC(SAC):
             # 计算目标Q值
             target_q1 = self.target_critic1(next_obs_with_context, pi_next, training=True)
             target_q2 = self.target_critic2(next_obs_with_context, pi_next, training=True)
-            
-            # 调试信息：打印目标Q值
-            tf.print("Debug - target_q1 mean:", tf.reduce_mean(target_q1))
-            tf.print("Debug - target_q2 mean:", tf.reduce_mean(target_q2))
 
             # 使用双Q网络取最小值
             min_q_pi = tf.minimum(q1_pi, q2_pi)
             min_target_q = tf.minimum(target_q1, target_q2)
-            
-            # 调试：显示min_q和log_alpha
-            tf.print("Debug - min_q_pi:", tf.reduce_mean(min_q_pi))
-            tf.print("Debug - min_target_q:", tf.reduce_mean(min_target_q))
-            tf.print("Debug - log_alpha:", tf.reduce_mean(log_alpha))
-            tf.print("Debug - exp(log_alpha):", tf.reduce_mean(tf.math.exp(log_alpha)))
 
             # 基于熵正则化的贝尔曼更新
             q_backup = tf.stop_gradient(
                 rewards + self.gamma * (1 - done) * (min_target_q - tf.math.exp(log_alpha) * logp_pi_next)
             )
-            
-            # 调试信息：打印q_backup的组成部分
-            tf.print("Debug - rewards平均值:", tf.reduce_mean(rewards))
-            tf.print("Debug - gamma:", self.gamma)
-            tf.print("Debug - (1-done)平均值:", tf.reduce_mean(1-done))
-            tf.print("Debug - logp_pi_next平均值:", tf.reduce_mean(logp_pi_next))
-            tf.print("Debug - 熵项平均值:", tf.reduce_mean(tf.math.exp(log_alpha) * logp_pi_next))
-            tf.print("Debug - q_backup平均值:", tf.reduce_mean(q_backup))
-
-            # 检查Q值是否接近0
-            is_q1_near_zero = tf.reduce_mean(tf.abs(q1)) < 1e-4
-            is_q2_near_zero = tf.reduce_mean(tf.abs(q2)) < 1e-4
-            
-            # 如果Q值接近0，打印更多诊断信息并测试网络
-            def print_debug_info():
-                tf.print("WARNING: Q values are close to zero!")
-                # 检查critic网络的权重和结构
-                tf.print("Critic网络结构:")
-                for i in range(len(self.critic1.core.layers)):
-                    layer = self.critic1.core.layers[i]
-                    tf.print("  Layer", i, ":", layer.__class__.__name__)
-                
-                # 找到第一个有kernel的层
-                for i in range(len(self.critic1.core.layers)):
-                    layer = self.critic1.core.layers[i]
-                    if hasattr(layer, 'kernel'):
-                        tf.print("Critic1 Dense层权重均值:", tf.reduce_mean(layer.kernel))
-                        tf.print("Critic1 Dense层偏置均值:", tf.reduce_mean(layer.bias))
-                        break
-                
-                # 检查最后一层
-                if hasattr(self.critic1.head, 'layers'):
-                    last_layer = self.critic1.head.layers[-1]
-                    if hasattr(last_layer, 'kernel'):
-                        tf.print("Critic1最后一层权重均值:", tf.reduce_mean(last_layer.kernel))
-                        tf.print("Critic1最后一层偏置均值:", tf.reduce_mean(last_layer.bias))
-                
-                # 使用随机输入测试critic网络
-                test_obs = tf.random.normal([1, self.obs_dim + self.context_dim], dtype=tf.float32)
-                test_act = tf.random.normal([1, self.action_dim], dtype=tf.float32)
-                test_q1 = self.critic1(test_obs, test_act, training=False)
-                test_q2 = self.critic2(test_obs, test_act, training=False)
-                tf.print("随机输入测试 - Critic1输出:", test_q1)
-                tf.print("随机输入测试 - Critic2输出:", test_q2)
-                
-                # 检查当前输入是否全为0
-                tf.print("当前输入obs_with_context平均值:", tf.reduce_mean(tf.abs(obs_with_context)))
-                tf.print("当前输入actions平均值:", tf.reduce_mean(tf.abs(actions)))
-                
-                # 检查任务表示
-                tf.print("任务表示平均绝对值:", tf.reduce_mean(tf.abs(task_representation)))
-                
-                return tf.constant(0)
-            
-            tf.cond(tf.logical_or(is_q1_near_zero, is_q2_near_zero), 
-                    print_debug_info, 
-                    lambda: tf.constant(0))
 
             # 计算SAC损失
             pi_loss = tf.reduce_mean(tf.math.exp(log_alpha) * logp_pi - min_q_pi)
             q1_loss = 0.5 * tf.reduce_mean((q_backup - q1) ** 2)
             q2_loss = 0.5 * tf.reduce_mean((q_backup - q2) ** 2)
             value_loss = q1_loss + q2_loss
-            
-            # 调试信息：打印损失
-            tf.print("Debug - pi_loss:", pi_loss)
-            tf.print("Debug - q1_loss:", q1_loss)
-            tf.print("Debug - q2_loss:", q2_loss)
             
             # 增加ContextRNN的损失，鼓励有效的任务表示学习
             # 可以添加一个正则化项或辅助损失
