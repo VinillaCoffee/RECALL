@@ -28,12 +28,6 @@ class TriRL_SAC(SAC):
         self.context_dim = context_dim
         self.replay_ratio = replay_ratio
         
-        # 调试信息：打印输入参数
-        print("=== TriRL_SAC初始化 ===")
-        print(f"历史长度: {history_length}")
-        print(f"上下文维度: {context_dim}")
-        print(f"回放比例: {replay_ratio}")
-        
         # 扩展actor_kwargs和critic_kwargs以包含上下文维度
         actor_kwargs = vanilla_sac_kwargs.get("actor_kwargs", {})
         critic_kwargs = vanilla_sac_kwargs.get("critic_kwargs", {})
@@ -42,16 +36,10 @@ class TriRL_SAC(SAC):
         obs_dim = vanilla_sac_kwargs["env"].observation_space.shape[0]
         act_dim = vanilla_sac_kwargs["env"].action_space.shape[0]
         
-        print(f"观测维度: {obs_dim}")
-        print(f"动作维度: {act_dim}")
-        
         # 更新输入维度，包含观测和任务表示
         actor_input_dim = obs_dim + context_dim
         # 修复：critic的输入维度只需要是观测维度，在critic内部会将action拼接上去
         critic_input_dim = obs_dim + context_dim
-        
-        print(f"Actor输入维度: {actor_input_dim} (观测 {obs_dim} + 任务表示 {context_dim})")
-        print(f"Critic输入维度: {critic_input_dim} (观测 {obs_dim} + 任务表示 {context_dim})")
         
         actor_kwargs["input_dim"] = actor_input_dim
         critic_kwargs["input_dim"] = critic_input_dim
@@ -66,14 +54,6 @@ class TriRL_SAC(SAC):
         # 初始化历史缓冲区
         self.action_dim = self.env.action_space.shape[0]
         self.obs_dim = self.env.observation_space.shape[0]
-        
-        print(f"已初始化Actor和Critic网络")
-        print(f"Actor输入维度: {actor_input_dim}, 输出维度: {self.action_dim}")
-        print(f"Critic1输入维度: {critic_input_dim}, 输出维度: 1")
-        
-        # 确认网络是否正确初始化
-        print(f"Actor trainable变量形状: {[var.shape for var in self.actor.trainable_variables]}")
-        print(f"Critic1 trainable变量形状: {[var.shape for var in self.critic1.trainable_variables]}")
         
         # 用于存储最近的历史数据 - 使用TensorFlow张量而不是numpy数组
         self.recent_actions = tf.zeros((self.history_length, self.action_dim), dtype=tf.float32)
@@ -94,45 +74,6 @@ class TriRL_SAC(SAC):
             obsr_dim=self.obs_dim
         )
         
-        print(f"ContextRNN输入维度: {self.action_dim + 1 + self.obs_dim}, 输出维度: {self.context_dim}")
-        print(f"ContextRNN trainable变量形状: {[var.shape for var in self.context_rnn.trainable_variables]}")
-        
-        # 测试ContextRNN
-        print("Testing ContextRNN...")
-        
-        # 创建随机输入数据
-        test_actions = tf.random.normal([1, self.history_length, self.action_dim], dtype=tf.float32)
-        test_rewards = tf.random.normal([1, self.history_length, 1], dtype=tf.float32)
-        test_obs = tf.random.normal([1, self.history_length, self.obs_dim], dtype=tf.float32)
-        
-        # 确保test_history包含float32类型数据
-        test_history = (
-            tf.cast(test_actions, dtype=tf.float32),
-            tf.cast(test_rewards, dtype=tf.float32), 
-            tf.cast(test_obs, dtype=tf.float32)
-        )
-        
-        # 显式尝试每个部分
-        print("Test shapes:")
-        print(f"  Actions: {test_actions.shape}, dtype: {test_actions.dtype}")
-        print(f"  Rewards: {test_rewards.shape}, dtype: {test_rewards.dtype}")
-        print(f"  Observations: {test_obs.shape}, dtype: {test_obs.dtype}")
-        
-        # 使用try-except捕获潜在错误
-        try:
-            # 尝试调用ContextRNN
-            test_representation = self.context_rnn(test_history, training=False)
-            tf.print("ContextRNN test output shape:", tf.shape(test_representation))
-            tf.print("ContextRNN test output mean:", tf.reduce_mean(tf.abs(test_representation)))
-        except Exception as e:
-            print(f"Error testing ContextRNN: {e}")
-            print("Using fallback task representation")
-            # 如果ContextRNN出错，创建一个初始随机任务表示作为后备
-            self.fallback_representation = tf.Variable(
-                tf.random.normal([1, self.context_dim], mean=0.0, stddev=0.1, dtype=tf.float32),
-                trainable=True, name="fallback_task_representation"
-            )
-        
         # 创建旧缓冲区
         self.old_replay_buffer = None
         
@@ -141,11 +82,6 @@ class TriRL_SAC(SAC):
         
         # 重置优化器以包含所有需要训练的变量
         self.reset_optimizer()
-        
-        # 测试critic网络初始化
-        self.test_critic_initialization()
-        
-        print("=== TriRL_SAC初始化完成 ===")
     
     def reset_optimizer(self):
         """重置优化器，确保包含所有需要训练的变量"""
@@ -162,39 +98,10 @@ class TriRL_SAC(SAC):
 
     def test_critic_initialization(self):
         """测试critic网络是否正确初始化并能产生非零输出"""
-        print("Testing Critic network initialization...")
         test_obs = tf.random.normal([1, self.obs_dim + self.context_dim], dtype=tf.float32)
         test_act = tf.random.normal([1, self.action_dim], dtype=tf.float32)
         test_q1 = self.critic1(test_obs, test_act, training=False)
         test_q2 = self.critic2(test_obs, test_act, training=False)
-        
-        # 使用tf.print等待计算完成后再打印
-        tf.print("Critic1 test output:", test_q1)
-        tf.print("Critic2 test output:", test_q2)
-        
-        # 打印网络结构
-        print("Critic network structure:")
-        for i, layer in enumerate(self.critic1.core.layers):
-            print(f"  Layer {i}: {layer.__class__.__name__}")
-        
-        # 找到一个有kernel的层来打印权重信息
-        for i, layer in enumerate(self.critic1.core.layers):
-            if hasattr(layer, 'kernel'):
-                kernel_mean = tf.reduce_mean(layer.kernel)
-                bias_mean = tf.reduce_mean(layer.bias)
-                tf.print(f"Critic1 layer {i} (Dense) kernel mean:", kernel_mean)
-                tf.print(f"Critic1 layer {i} (Dense) bias mean:", bias_mean)
-                break
-        
-        # 检查最后一层
-        if hasattr(self.critic1.head, 'layers'):
-            last_layer = self.critic1.head.layers[-1]
-            if hasattr(last_layer, 'kernel'):
-                last_kernel_mean = tf.reduce_mean(last_layer.kernel)
-                last_bias_mean = tf.reduce_mean(last_layer.bias)
-                tf.print("Critic1 last layer kernel mean:", last_kernel_mean)
-                tf.print("Critic1 last layer bias mean:", last_bias_mean)
-        
         return test_q1, test_q2
     
     def compute_task_representation(self, history_data, training=False):
@@ -209,12 +116,6 @@ class TriRL_SAC(SAC):
         """
         # 解包历史数据
         h_actions, h_rewards, h_observations = history_data
-        
-        # 添加调试信息 - 使用tf.print替代print和.numpy()
-        if not training:
-            tf.print("History action mean:", tf.reduce_mean(tf.abs(h_actions)))
-            tf.print("History reward mean:", tf.reduce_mean(tf.abs(h_rewards)))
-            tf.print("History observation mean:", tf.reduce_mean(tf.abs(h_observations)))
         
         # 确保数据类型一致
         h_actions = tf.cast(h_actions, dtype=tf.float32)
@@ -264,15 +165,9 @@ class TriRL_SAC(SAC):
         try:
             task_representation = self.context_rnn(history_data, training=training)
         except Exception as e:
-            tf.print("Error in ContextRNN:", e)
             # 如果出错，提供一个合理的替代值
             task_representation = tf.random.normal([batch_size, self.context_dim], 
                                                   mean=0.0, stddev=0.1, dtype=tf.float32)
-        
-        # 调试信息：打印任务表示 - 使用tf.print
-        if not training:
-            tf.print("Task representation mean:", tf.reduce_mean(tf.abs(task_representation)))
-            tf.print("Task representation shape:", tf.shape(task_representation))
         
         # 确保输出形状正确 [batch_size, context_dim]
         if len(task_representation.shape) == 1:
@@ -503,36 +398,14 @@ class TriRL_SAC(SAC):
         h_o = tf.random.normal([batch_size, self.history_length, self.obs_dim], 
                                 mean=0.0, stddev=0.01, dtype=tf.float32)
         
-        # 准备当前历史和下一步历史
-        actions_3d = tf.expand_dims(actions, axis=1)  # [batch_size, 1, action_dim]
-        rewards_3d = tf.reshape(rewards, [batch_size, 1, 1])
-        obs_3d = tf.expand_dims(obs, axis=1)  # [batch_size, 1, obs_dim]
+        # 获取alpha值
+        log_alpha = self.all_log_alpha
         
-        # 构建历史数据元组
-        pre_act_rew = (h_a, h_r, h_o)
-        next_pre_act_rew = (
-            tf.concat([h_a[:, 1:], actions_3d], axis=1),
-            tf.concat([h_r[:, 1:], rewards_3d], axis=1),
-            tf.concat([h_o[:, 1:], obs_3d], axis=1)
-        )
-        
+        # 使用GradientTape跟踪梯度计算
         with tf.GradientTape(persistent=True) as g:
-            if self.auto_alpha:
-                log_alpha = self.get_log_alpha(obs)
-            else:
-                log_alpha = tf.math.log(self.alpha)
-
-            # 计算动态任务表示 - 对于批处理情况，任务表示应该已经包含批次维度
-            # 使用training=True确保ContextRNN参与梯度计算
-            try:
-                task_representation = self.compute_task_representation(pre_act_rew, training=True)
-                next_task_representation = self.compute_task_representation(next_pre_act_rew, training=True)
-            except Exception as e:
-                # 提供一个合理的任务表示替代值
-                task_representation = tf.random.normal([batch_size, self.context_dim], 
-                                                      mean=0.0, stddev=0.1, dtype=tf.float32)
-                next_task_representation = tf.random.normal([batch_size, self.context_dim], 
-                                                          mean=0.0, stddev=0.1, dtype=tf.float32)
+            # 计算当前和下一个状态的任务表示
+            task_representation = self.compute_task_representation((h_a, h_r, h_o), training=True)
+            next_task_representation = self.compute_task_representation((h_a, h_r, h_o), training=True)
             
             # 确保任务表示不是全零
             task_rep_mean = tf.reduce_mean(tf.abs(task_representation))
